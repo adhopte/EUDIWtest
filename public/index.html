@@ -3,45 +3,104 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Benin ASIN PoC — Dummy Relying Party (OpenID4VP)</title>
+<title>Konsa Énergie &amp; Télécom — My Account</title>
 <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
-  <main>
-    <header>
-      <h1>Dummy Relying Party</h1>
-      <p class="sub">Benin ASIN PoC — OpenID4VP credential presentation demo</p>
-    </header>
+  <div class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">⚡</span>
+      <span class="brand-name" id="biller-name">Konsa Énergie &amp; Télécom</span>
+    </div>
+    <span class="env-pill">PoC demo — not a real biller</span>
+  </div>
 
-    <section id="start-panel">
-      <button id="start-btn">Start verification</button>
-      <p class="hint">Generates a new authorization request and QR code.</p>
+  <!-- ===== LOGIN VIEW ===== -->
+  <main id="login-view" class="view">
+    <section class="login-card">
+      <h1>Sign in to your account</h1>
+      <p class="muted">View your bill, check usage, and manage your account.</p>
+
+      <form class="legacy-form" onsubmit="return false;">
+        <label>Account number
+          <input type="text" placeholder="e.g. 0045 8821 3300" disabled />
+        </label>
+        <label>Password
+          <input type="password" placeholder="••••••••" disabled />
+        </label>
+        <button type="submit" class="btn-secondary" disabled>Sign in</button>
+        <p class="fine-print">Traditional sign-in is disabled in this demo — use your digital ID wallet below.</p>
+      </form>
+
+      <div class="divider"><span>OR</span></div>
+
+      <button id="wallet-login-btn" class="btn-primary">
+        <span class="btn-icon" aria-hidden="true">🪪</span>
+        Sign in with your Digital ID Wallet
+      </button>
+      <p class="fine-print">Powered by OpenID4VP · works with the EUDI reference wallet and compatible national wallets.</p>
     </section>
-
-    <section id="qr-panel" hidden>
-      <div id="status-badge" class="badge pending">Waiting for wallet…</div>
-      <img id="qr-img" alt="Scan with wallet app" />
-      <details>
-        <summary>Same-device link / raw request</summary>
-        <textarea id="raw-uri" readonly></textarea>
-      </details>
-    </section>
-
-    <section id="result-panel" hidden>
-      <div id="result-badge" class="badge"></div>
-      <h2>Presented claims</h2>
-      <pre id="claims-out"></pre>
-      <details>
-        <summary>Full decoded response (debug)</summary>
-        <pre id="debug-out"></pre>
-      </details>
-      <button id="reset-btn">Start another verification</button>
-    </section>
-
-    <footer>
-      <p>⚠️ Demo verifier: decodes SD-JWT VC / mDoc structurally but does <strong>not</strong> cryptographically verify issuer signatures or trust chains. Not for production use.</p>
-    </footer>
   </main>
+
+  <!-- ===== WALLET MODAL ===== -->
+  <div id="wallet-modal" class="modal-overlay" hidden>
+    <div class="modal">
+      <button id="modal-close" class="modal-close" aria-label="Close">✕</button>
+      <div id="modal-pending">
+        <h2>Scan with your wallet app</h2>
+        <div id="status-badge" class="badge pending">Waiting for your wallet…</div>
+        <img id="qr-img" alt="Scan with your digital ID wallet app" />
+        <a id="same-device-link" class="btn-outline" href="#">Open in Wallet app on this device</a>
+        <details>
+          <summary>Technical details</summary>
+          <textarea id="raw-uri" readonly></textarea>
+        </details>
+      </div>
+      <div id="modal-error" hidden>
+        <h2>Verification failed</h2>
+        <div class="badge err">Error</div>
+        <pre id="error-out"></pre>
+        <button id="retry-btn" class="btn-primary">Try again</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== DASHBOARD VIEW ===== -->
+  <main id="dashboard-view" class="view" hidden>
+    <section class="dash-header">
+      <h1 id="welcome-name">Welcome</h1>
+      <button id="logout-btn" class="btn-outline small">Log out</button>
+    </section>
+
+    <section class="dash-grid">
+      <div class="dash-card">
+        <p class="dash-label">Current balance</p>
+        <p class="dash-value">XOF 12,450</p>
+        <p class="muted">Due 05 Oct 2026</p>
+        <button class="btn-primary small">Pay now</button>
+      </div>
+      <div class="dash-card">
+        <p class="dash-label">Account holder</p>
+        <p class="dash-value" id="account-holder">—</p>
+        <p class="muted" id="account-dob"></p>
+      </div>
+      <div class="dash-card">
+        <p class="dash-label">Verification method</p>
+        <p class="dash-value">Digital ID Wallet</p>
+        <p class="muted" id="verified-format"></p>
+      </div>
+    </section>
+
+    <details class="debug-block">
+      <summary>Disclosed claims / raw verification result (debug)</summary>
+      <pre id="claims-out"></pre>
+    </details>
+  </main>
+
+  <footer>
+    <p>⚠️ Demo verifier: decodes SD-JWT VC / mDoc structurally but does <strong>not</strong> cryptographically verify issuer signatures or trust chains. Not for production use.</p>
+  </footer>
+
   <script src="/app.js"></script>
 </body>
 </html>

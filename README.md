@@ -1,13 +1,20 @@
-# Dummy OpenID4VP Relying Party — Benin ASIN PoC
+# Konsa Énergie & Télécom — Dummy Utility-Billing Portal (OpenID4VP login)
 
-A minimal OpenID4VP **verifier** (relying party) for demoing credential
-presentation against SIGMA's PID Issuer / Wallet. It:
+A fictional utility/telecom billing-company website, used to demo **"Login
+with your Digital ID Wallet"** via OpenID4VP against SIGMA's PID Issuer /
+Wallet (or the EUDI reference wallet, for interop testing). It:
 
-1. Generates an OpenID4VP authorization request (`response_mode=direct_post`)
-   and shows it as a QR code.
-2. Accepts the wallet's `POST` to `response_uri` with `vp_token`.
-3. Structurally decodes an SD-JWT VC (and best-effort, an mDoc CBOR
-   `DeviceResponse`) and displays the disclosed claims on a live status page.
+1. Shows a billing-company login page (`/`) with a "Sign in with your
+   Digital ID Wallet" button. Clicking it opens a modal with a QR code
+   (cross-device) and an `openid4vp://` deep link (same-device).
+2. Generates an OpenID4VP authorization request (`response_mode=direct_post`,
+   `client_id_scheme=redirect_uri`, sent **plain** — no JAR/JWT — with only
+   `presentation_definition` moved out via `presentation_definition_uri` to
+   keep the QR short and scannable).
+3. Accepts the wallet's `POST` to `response_uri` with `vp_token`.
+4. Structurally decodes an SD-JWT VC (and best-effort, an mDoc CBOR
+   `DeviceResponse`) and logs the user into a mock account dashboard
+   showing their disclosed name / DOB and a fake bill balance.
 
 > ⚠️ **This is a demo/PoC tool, not a certified verifier.** It does not verify
 > issuer signatures, trust chains, revocation status, or key binding. Do not
@@ -63,16 +70,49 @@ Same idea as Render: `npm install && npm start`, set `BASE_URL` to the
 platform-assigned public HTTPS URL, expose port from `PORT` env var
 (already read from `process.env.PORT`).
 
-## Adjusting the requested credential
+## Adjusting the requested credential / branding
 
 `buildPresentationDefinition()` in `server.js` currently asks for
 `given_name`, `family_name`, `birth_date` from a PID-shaped credential
 (`vc+sd-jwt` and `mso_mdoc` formats, matching SIGMA's dual-issuance
-strategy). Edit the `fields`/`format` block to match:
-- the exact `vct` value the SIGMA Issuer uses for the Benin PID, and/or
-- the mDoc `doctype` (`eu.europa.ec.eudi.pid.1`) and namespace claim paths.
+strategy). Set these env vars to match the exact identifiers your issuer
+and wallet actually use — they can differ between the EUDI reference
+ecosystem and a Benin-specific wallet build:
 
-## Hardening for real use (beyond this PoC)
+- `PID_SDJWT_VCT` — the SD-JWT VC's `vct` value (default `urn:eudi:pid:1`)
+- `PID_MDOC_DOCTYPE` — the mDoc `doctype` / namespace (default `eu.europa.ec.eudi.pid.1`)
+- `BILLER_NAME` — display name shown in the header, page title, and the
+  presentation request's `purpose` text (default `Konsa Énergie & Télécom`)
+
+## Notes specific to the EUDI reference wallet (eudi-app-android-wallet-ui)
+
+If you're testing against the official EU reference wallet app rather than
+your own build, two things matter beyond just QR size:
+
+- **`client_id_scheme=redirect_uri` must be sent plain, never as a signed
+  request object (JAR).** The wallet's OpenID4VP library
+  (`eudi-lib-jvm-openid4vp-kt`) explicitly rejects a JAR/JWT request for
+  this scheme — this app keeps the top-level request by value and only
+  moves the bulky `presentation_definition` out via
+  `presentation_definition_uri` (mirroring how EU's own reference verifier,
+  `eudi-srv-web-verifier-endpoint-23220-4-kt`, keeps its QR codes short).
+- **The stock, unmodified wallet APK may only trust `pre-registered`
+  verifiers baked into its build config**, i.e. the official demo verifier
+  at verifier.eudiw.dev. If a plain `redirect_uri`/`x509_san_dns` request
+  from this dummy RP still isn't recognized even after the QR scans fine,
+  that's the likely cause — the fixes are: (a) confirm with whoever built
+  your test APK whether `redirect_uri`/`x509_san_dns` schemes are enabled
+  alongside `pre-registered`, or (b) for the most faithful interop test,
+  run EU's own reference verifier
+  (github.com/eu-digital-identity-wallet/eudi-srv-web-verifier-endpoint-23220-4-kt)
+  instead of this dummy RP — it's built and continuously tested against
+  exactly this wallet.
+- The wallet (per its README) speaks **OpenID4VP draft 24** and supports
+  both **DIF Presentation Exchange v2.0** (`presentation_definition`, what
+  this app uses) and **DCQL** — if PE-based requests get silently ignored
+  on a given wallet build, DCQL is the other format worth trying.
+
+
 
 - Verify the SD-JWT's issuer signature against the issuer's JWKS
   (`.well-known/jwt-vc-issuer` per SD-JWT VC, or the `x5c` header) — the
