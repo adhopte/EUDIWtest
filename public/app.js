@@ -47,8 +47,19 @@
     statusBadge.textContent = 'Waiting for your wallet…';
     statusBadge.className = 'badge pending';
 
-    const res = await fetch('/api/session', { method: 'POST' });
-    const data = await res.json();
+    let res, data;
+    try {
+      res = await fetch('/api/session', { method: 'POST' });
+      data = await res.json();
+    } catch (e) {
+      showModalError(`Could not reach the verifier: ${e.message}`);
+      return;
+    }
+
+    if (!res.ok || !data.qrCodeDataUrl) {
+      showModalError(data.detail || data.error || `Session request failed (HTTP ${res.status})`);
+      return;
+    }
 
     qrImg.src = data.qrCodeDataUrl;
     sameDeviceLink.href = data.authorizationRequestUri;

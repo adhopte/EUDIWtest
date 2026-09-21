@@ -22,7 +22,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-const BASE_URL = (process.env.BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
+const BASE_URL = (process.env.BASE_URL || process.env.RENDER_EXTERNAL_URL || 'http://localhost:3000').replace(/\/$/, '');
 const PORT = process.env.PORT || 3000;
 
 // The wallet ecosystem you're demoing against may use different credential
@@ -142,6 +142,7 @@ app.post('/api/session', (req, res) => {
 
   QRCode.toDataURL(deepLink, { margin: 1, width: 320 }, (err, dataUrl) => {
     if (err) {
+      console.error('QR generation failed:', err);
       return res.status(500).json({ error: 'qr_generation_failed', detail: err.message });
     }
     res.json({
