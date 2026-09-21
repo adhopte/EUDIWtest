@@ -1,0 +1,20 @@
+{
+  "name": "openid4vp-dummy-rp",
+  "version": "1.0.0",
+  "description": "Dummy OpenID4VP Relying Party (Verifier) for Benin ASIN PoC demos",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "cbor-x": "^1.5.9",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "qrcode": "^1.5.4",
+    "uuid": "^9.0.1"
+  }
+}
