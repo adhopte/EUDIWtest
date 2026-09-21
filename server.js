@@ -22,9 +22,16 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-const BASE_URL = (process.env.BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
-const CLIENT_ID = process.env.CLIENT_ID || 'dummy-rp.benin-poc';
+const BASE_URL = (process.env.BASE_URL || process.env.RENDER_EXTERNAL_URL || 'http://localhost:3000').replace(/\/$/, '');
 const PORT = process.env.PORT || 3000;
+
+// The wallet ecosystem you're demoing against may use different credential
+// type identifiers for "the same" PID. Defaults below match the EUDI ARF
+// reference values; override via env once you know the Benin wallet /
+// SIGMA Issuer's actual vct and mDoc doctype (they may differ).
+const PID_SDJWT_VCT = process.env.PID_SDJWT_VCT || 'urn:eudi:pid:1';
+const PID_MDOC_DOCTYPE = process.env.PID_MDOC_DOCTYPE || 'eu.europa.ec.eudi.pid.1';
+const BILLER_NAME = process.env.BILLER_NAME || 'Konsa Énergie & Télécom';
 
 // In-memory session store — fine for a demo, NOT for production.
 // session = {
@@ -43,19 +50,22 @@ function pruneSessions() {
 setInterval(pruneSessions, 60 * 1000).unref();
 
 /**
- * The credential(s) this dummy RP asks for. Adjust `vct` / fields to
- * match whatever the SIGMA Issuer actually issues for the Benin PID
- * (e.g. "urn:eudi:pid:1" or the SIGMA-specific vct string) and the
- * mDoc doctype ("eu.europa.ec.eudi.pid.1") for the parallel format.
+ * The credential(s) this RP asks for. This targets a PID (national eID)
+ * in either format, so it works whether the wallet answers with an
+ * SD-JWT VC or an mDoc. Two different wallet ecosystems (the EUDI
+ * reference wallet vs. a Benin-specific build) may use different type
+ * identifiers for what is conceptually "the same" PID — set
+ * PID_SDJWT_VCT / PID_MDOC_DOCTYPE env vars once you know the exact
+ * values the SIGMA Issuer / Benin wallet actually use.
  */
 function buildPresentationDefinition(sessionId) {
   return {
     id: `pid-request-${sessionId}`,
     input_descriptors: [
       {
-        id: 'eu.europa.ec.eudi.pid.1',
-        name: 'Benin PID (PoC)',
-        purpose: 'Demonstrate OpenID4VP presentation of the national PID for the Benin ASIN PoC',
+        id: PID_MDOC_DOCTYPE,
+        name: 'National PID',
+        purpose: `Verify your identity to log in to ${BILLER_NAME} online`,
         format: {
           'vc+sd-jwt': { 'sd-jwt_alg_values': ['ES256'] },
           mso_mdoc: { alg: ['ES256'] }
@@ -63,15 +73,22 @@ function buildPresentationDefinition(sessionId) {
         constraints: {
           limit_disclosure: 'required',
           fields: [
-            { path: ['$.given_name', "$['eu.europa.ec.eudi.pid.1']['given_name']"] },
-            { path: ['$.family_name', "$['eu.europa.ec.eudi.pid.1']['family_name']"] },
-            { path: ['$.birth_date', "$['eu.europa.ec.eudi.pid.1']['birth_date']"] }
+            { path: ['$.given_name', `$['${PID_MDOC_DOCTYPE}']['given_name']`] },
+            { path: ['$.family_name', `$['${PID_MDOC_DOCTYPE}']['family_name']`] },
+            { path: ['$.birth_date', `$['${PID_MDOC_DOCTYPE}']['birth_date']`] }
           ]
         }
       }
     ]
   };
 }
+
+/**
+ * GET /api/config — lets the front-end pull branding without hardcoding it.
+ */
+app.get('/api/config', (req, res) => {
+  res.json({ billerName: BILLER_NAME });
+});
 
 /**
  * POST /api/session
@@ -85,31 +102,47 @@ app.post('/api/session', (req, res) => {
   const state = uuidv4();
   const nonce = crypto.randomBytes(16).toString('hex');
 
+  // client_id_scheme=redirect_uri is the least-friction scheme for a demo:
+  // no PKI / signing required, but two things follow from that:
+  //  1. client_id MUST literally equal response_uri (self-consistency
+  //     check the wallet performs instead of a signature check).
+  //  2. The request must be sent PLAIN — the EUDI reference wallet's
+  //     OpenID4VP library explicitly disallows a signed/JAR request
+  //     object for this scheme, so we do NOT wrap it in a JWT.
+  const responseUri = `${BASE_URL}/api/response`;
+  const clientId = responseUri;
+  const presentationDefinition = buildPresentationDefinition(id);
+
   const session = {
     id,
     state,
     nonce,
     createdAt: Date.now(),
-    status: 'pending'
+    status: 'pending',
+    presentationDefinition
   };
   sessions.set(id, session);
 
-  const presentationDefinition = buildPresentationDefinition(id);
-
+  // Keep the request itself by value (plain, no JWT) but move the bulky
+  // presentation_definition out to its own URL — this is exactly how
+  // the official EUDI reference verifier keeps its QR codes short while
+  // staying JAR-free for redirect_uri-scheme clients.
   const params = new URLSearchParams({
-    client_id: CLIENT_ID,
+    client_id: clientId,
+    client_id_scheme: 'redirect_uri',
     response_type: 'vp_token',
     response_mode: 'direct_post',
-    response_uri: `${BASE_URL}/api/response`,
+    response_uri: responseUri,
     nonce,
     state,
-    presentation_definition: JSON.stringify(presentationDefinition)
+    presentation_definition_uri: `${BASE_URL}/api/pd/${id}`
   });
 
   const deepLink = `openid4vp://?${params.toString()}`;
 
   QRCode.toDataURL(deepLink, { margin: 1, width: 320 }, (err, dataUrl) => {
     if (err) {
+      console.error('QR generation failed:', err);
       return res.status(500).json({ error: 'qr_generation_failed', detail: err.message });
     }
     res.json({
@@ -121,6 +154,17 @@ app.post('/api/session', (req, res) => {
       responseUri: `${BASE_URL}/api/response`
     });
   });
+});
+
+/**
+ * GET /api/pd/:id  — the `presentation_definition_uri` the wallet fetches.
+ * Plain JSON, no signing — matches redirect_uri client_id_scheme, which
+ * per the wallet's OpenID4VP library must NOT receive a JAR/JWT request.
+ */
+app.get('/api/pd/:id', (req, res) => {
+  const session = sessions.get(req.params.id);
+  if (!session) return res.status(404).json({ error: 'not_found' });
+  res.json(session.presentationDefinition);
 });
 
 /**
@@ -222,10 +266,17 @@ app.get('/api/session/:id', (req, res) => {
 /**
  * GET /.well-known/openid4vp-verifier (informational, not required by spec)
  */
-app.get('/health', (req, res) => res.json({ ok: true, baseUrl: BASE_URL, clientId: CLIENT_ID }));
+app.get('/health', (req, res) => res.json({
+  ok: true,
+  baseUrl: BASE_URL,
+  billerName: BILLER_NAME,
+  pidSdJwtVct: PID_SDJWT_VCT,
+  pidMdocDoctype: PID_MDOC_DOCTYPE
+}));
 
 app.listen(PORT, () => {
-  console.log(`Dummy OpenID4VP RP listening on port ${PORT}`);
+  console.log(`${BILLER_NAME} — OpenID4VP verifier listening on port ${PORT}`);
   console.log(`BASE_URL=${BASE_URL}  (must be the public HTTPS URL wallets can reach)`);
   console.log(`response_uri = ${BASE_URL}/api/response`);
+  console.log(`requesting: sd-jwt vct=${PID_SDJWT_VCT}  |  mdoc doctype=${PID_MDOC_DOCTYPE}`);
 });
