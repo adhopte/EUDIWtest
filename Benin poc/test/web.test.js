@@ -57,6 +57,22 @@ test('full demo login flow reaches the FDA dashboard', async () => {
   assert.match(dash, /Bienvenue, Angélique HOUNGBEDJI/);
 });
 
+test('the QR code uses request_uri and the wallet can fetch the request object', async () => {
+  const create = await fetch(`${base}/api/bedc/transactions`, { method: 'POST' });
+  const cookie = create.headers.get('set-cookie').split(';')[0];
+  const tx = await create.json();
+  assert.ok(tx.uri.length < 300, `QR payload too long: ${tx.uri.length}`);
+  const requestUri = new URL(tx.uri.replace('openid4vp://', 'http://x/')).searchParams.get('request_uri');
+  const localUri = requestUri.replace(/^https?:\/\/[^/]+/, base);
+  const res = await fetch(localUri);
+  assert.match(res.headers.get('content-type'), /oauth-authz-req\+jwt/);
+  const payload = JSON.parse(Buffer.from((await res.text()).split('.')[1], 'base64url'));
+  assert.equal(payload.response_mode, 'direct_post');
+  assert.equal(payload.presentation_definition.input_descriptors[0].id, 'eu.europa.ec.eudi.pid.1');
+  const status = await (await fetch(`${base}/api/tx/${tx.id}`, { headers: { cookie } })).json();
+  assert.equal(status.walletStep, 'request_fetched');
+});
+
 test('transaction status is not visible to another browser', async () => {
   const create = await fetch(`${base}/api/bedc/transactions`, { method: 'POST' });
   const tx = await create.json();

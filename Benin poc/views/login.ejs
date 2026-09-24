@@ -11,6 +11,8 @@
         data-demo="<%= config.DEMO_MODE ? '1' : '' %>"
         data-msg-waiting="<%= t('login.waiting') %>"
         data-msg-verifying="<%= t('login.verifying') %>"
+        data-msg-connected="<%= t('login.wallet_connected') %>"
+        data-msg-copied="<%= t('login.copied') %>"
         data-msg-success="<%= t('login.success') %>"
         data-msg-rejected="<%= t('login.rejected') %>"
         data-msg-expired="<%= t('login.expired') %>">
@@ -39,6 +41,11 @@
         </div>
         <% if (config.DEMO_MODE) { %><p class="muted small"><%= t('login.demo_note') %></p><% } %>
         <p class="muted small"><%= t('login.no_wallet') %></p>
+        <details class="wallet-link">
+          <summary><%= t('login.show_link') %></summary>
+          <textarea id="wallet-uri" rows="3" readonly></textarea>
+          <button class="btn btn-ghost btn-sm" id="copy-uri" type="button"><%= t('login.copy') %></button>
+        </details>
       </section>
 
       <aside class="card request-card">

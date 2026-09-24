@@ -56,12 +56,26 @@ To match what your wallet supports, set these in `.env`:
 
 - `QUERY_LANGUAGE=pex` (presentation_definition, OpenID4VP drafts) or `dcql`
   (OpenID4VP 1.0 `dcql_query`).
-- `REQUEST_MODE=reference` for a short QR code that uses `request_uri`.
+- `REQUEST_MODE=reference` (default) gives a short QR code that uses `request_uri`.
+  `value` puts the whole request in a very dense QR code.
 - `CLIENT_ID` / `CLIENT_ID_SCHEME` to match your registered verifier identifier.
 - Put the ANIP IACA and issuer certificates in [`trust/`](trust/README.md). Set
   `REQUIRE_TRUSTED_ISSUER=true` and `REQUIRE_HOLDER_BINDING=true` to make those
   checks mandatory.
 - Set `DEMO_MODE=false` to hide the simulator.
+
+## Troubleshooting a real wallet
+
+Each wallet call is logged with a `[wallet]` prefix (in Render: **Logs**):
+
+| What you see | Meaning | What to try |
+|---|---|---|
+| No `[wallet]` line after scanning | The wallet did not understand the QR code or link | Check the wallet's deep-link scheme (`WALLET_SCHEME`, e.g. `eudi-openid4vp://` or `haip://`); open *Trouble scanning? Show the wallet link* and paste the link into the wallet |
+| `GET /oid4vp/request/… -> 200`, then nothing | Wallet fetched the request but refused it | Usually the client identifier: set `CLIENT_ID` / `CLIENT_ID_SCHEME` to what the wallet accepts; try `QUERY_LANGUAGE=dcql` for OpenID4VP 1.0 wallets |
+| `POST /oid4vp/response -> 200` with `reasons` | Wallet responded; the verifier rejected it | The log line lists the failed checks |
+
+The login page also changes to *Wallet connected* as soon as the wallet fetches
+the request, so you can tell from the screen that the QR code was read.
 
 ## What is requested (Rulebook “Verifier Matrix”)
 

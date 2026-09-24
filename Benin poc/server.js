@@ -136,7 +136,7 @@ function txForBrowser(req) {
 app.get('/api/tx/:id', (req, res) => {
   const tx = txForBrowser(req);
   if (!tx) return res.status(404).json({ status: 'expired' });
-  res.json({ status: tx.status, reasons: tx.reasons || [] });
+  res.json({ status: tx.status, reasons: tx.reasons || [], walletStep: tx.walletStep || null });
 });
 
 app.post('/api/tx/:id/simulate', async (req, res, next) => {
@@ -155,10 +155,20 @@ app.post('/api/tx/:id/simulate', async (req, res, next) => {
   }
 });
 
+// Log every wallet-facing call so a failing wallet can be diagnosed from the host logs.
+app.use('/oid4vp', (req, res, next) => {
+  res.on('finish', () => {
+    console.log(`[wallet] ${req.method} ${req.originalUrl} -> ${res.statusCode} (${req.get('user-agent') || 'no user-agent'})`);
+  });
+  next();
+});
+
 // request_uri: authorization request by reference (REQUEST_MODE=reference)
-app.get('/oid4vp/request/:id', (req, res) => {
+app.all('/oid4vp/request/:id', (req, res) => {
+  if (!['GET', 'POST'].includes(req.method)) return res.status(405).end();
   const tx = oid4vp.getTransaction(req.params.id);
   if (!tx || tx.status !== 'pending') return res.status(404).end();
+  tx.walletStep = 'request_fetched';
   res.type('application/oauth-authz-req+jwt').send(oid4vp.requestObject(tx));
 });
 
@@ -166,6 +176,7 @@ app.get('/oid4vp/request/:id', (req, res) => {
 app.post('/oid4vp/response', async (req, res, next) => {
   try {
     const { status, body } = await oid4vp.handleWalletResponse(req.body || {});
+    console.log(`[wallet] response keys=${Object.keys(req.body || {}).join(',') || 'none'} -> ${status} ${JSON.stringify(body.error ? body : oid4vp.summary(req.body && req.body.state))}`);
     res.status(status).json(body);
   } catch (err) {
     next(err);

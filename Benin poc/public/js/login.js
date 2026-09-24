@@ -45,6 +45,7 @@
       const res = await fetch('/api/tx/' + encodeURIComponent(tx.id), { credentials: 'same-origin' });
       const body = await res.json();
       if (body.status !== 'pending') finish(body);
+      else if (body.walletStep === 'request_fetched') setStatus(msg('connected'));
     } catch (e) {
       /* transient network error: keep polling */
     }
@@ -66,10 +67,18 @@
     qr.innerHTML = '';
     qr.appendChild(img);
     sameDevice.href = tx.uri;
+    document.getElementById('wallet-uri').value = tx.uri;
     timer = setInterval(poll, 2000);
   }
 
   retry.addEventListener('click', start);
+  document.getElementById('copy-uri').addEventListener('click', function (e) {
+    const field = document.getElementById('wallet-uri');
+    field.select();
+    (navigator.clipboard ? navigator.clipboard.writeText(field.value) : Promise.reject())
+      .catch(function () { document.execCommand('copy'); })
+      .then(function () { e.target.textContent = msg('copied'); });
+  });
   if (simulate) {
     simulate.addEventListener('click', async function () {
       if (!tx) return;

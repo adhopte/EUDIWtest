@@ -6,7 +6,6 @@
   "common.poc_notice": "Preuve de concept — données de démonstration uniquement. Service non officiel des organisations citées.",
   "common.rulebook": "Les attestations suivent le Rulebook PID / Acte de naissance du Bénin v1.1 (espace de noms EUDI standard).",
   "common.republic": "République du Bénin",
-
   "portal.title": "eServices du Gouvernement",
   "portal.subtitle": "République du Bénin — portail des services publics numériques",
   "portal.hero.title": "Accédez aux services publics et aux services essentiels avec votre portefeuille d'identité numérique",
@@ -28,12 +27,12 @@
   "portal.how.2.text": "Scannez le code QR ou ouvrez votre portefeuille sur cet appareil.",
   "portal.how.3.title": "Approuvez et continuez",
   "portal.how.3.text": "Vérifiez les données demandées, approuvez, et vous êtes connecté.",
-
   "login.title": "Connectez-vous avec votre portefeuille d'identité numérique",
   "login.intro": "Scannez ce code QR avec votre portefeuille compatible EUDI pour partager votre {credential}.",
   "login.same_device": "Ouvrir le portefeuille sur cet appareil",
   "login.waiting": "En attente de votre portefeuille…",
   "login.verifying": "Vérification de la présentation…",
+  "login.wallet_connected": "Portefeuille connecté — approuvez la demande dans votre portefeuille…",
   "login.success": "Vérifié ! Connexion en cours…",
   "login.rejected": "La présentation n'a pas pu être acceptée.",
   "login.expired": "Cette demande a expiré.",
@@ -48,7 +47,9 @@
   "login.demo_note": "Présente des attestations de démonstration signées par un émetteur ANIP simulé.",
   "login.format": "Format",
   "login.no_wallet": "Pas encore de portefeuille ? Renseignez-vous auprès de l'ANIP pour obtenir votre identité numérique.",
-
+  "login.show_link": "Problème de scan ? Afficher le lien du portefeuille",
+  "login.copy": "Copier le lien",
+  "login.copied": "Copié",
   "bedc.tagline": "Alimenter le Bénin, un foyer à la fois",
   "bedc.nav.home": "Accueil",
   "bedc.nav.account": "Mon compte",
@@ -75,7 +76,6 @@
   "bedc.report_fault": "Signaler une panne",
   "bedc.service_address": "Adresse de desserte",
   "bedc.notice": "Maintenance programmée : départ Cotonou – Haie Vive, samedi 08h00–12h00.",
-
   "fda.tagline": "Administration et Contrôle des Aliments et des Médicaments",
   "fda.nav.home": "Accueil",
   "fda.nav.regulations": "Réglementation",
@@ -98,14 +98,12 @@
   "fda.service.certificate": "Demander un certificat médical",
   "fda.service.permit": "Autorisation d'importation de produits réglementés",
   "fda.alert": "Alerte publique : lots d'antipaludiques falsifiés détectés — vérifiez le numéro d'enregistrement avant tout achat.",
-
   "verified.title": "Attestation vérifiée",
   "verified.claims": "Attributs communiqués",
   "verified.checks": "Contrôles de vérification",
   "verified.issuer": "Émetteur",
   "verified.format": "Format",
   "verified.at": "Vérifiée le",
-
   "check.credentialType": "Type d'attestation",
   "check.issuerSignature": "Signature de l'émetteur",
   "check.trustedIssuer": "Émetteur de confiance",
@@ -115,7 +113,6 @@
   "check.status": "Statut de révocation",
   "check.ok": "Réussi",
   "check.fail": "Échec",
-
   "claim.family_name": "Nom",
   "claim.given_name": "Prénom(s)",
   "claim.birth_date": "Date de naissance",
@@ -138,10 +135,8 @@
   "claim.father_family_name": "Nom du père",
   "claim.father_given_name": "Prénom(s) du père",
   "claim.age_over_18": "Plus de 18 ans",
-
   "gender.1": "Masculin",
   "gender.2": "Féminin",
-
   "error.title": "Une erreur est survenue",
   "error.not_found": "Page introuvable.",
   "error.session": "Votre session a expiré. Veuillez vous reconnecter."

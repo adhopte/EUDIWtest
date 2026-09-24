@@ -30,10 +30,11 @@ module.exports = {
   // 'dcql' -> dcql_query (OpenID4VP 1.0)
   QUERY_LANGUAGE: (process.env.QUERY_LANGUAGE || 'pex').toLowerCase(),
 
-  // 'value'     -> all request parameters in the QR code / deep link
   // 'reference' -> short QR code with request_uri; the wallet fetches an
-  //                unsigned request object (alg "none") from this server
-  REQUEST_MODE: (process.env.REQUEST_MODE || 'value').toLowerCase(),
+  //                unsigned request object (alg "none") from this server (default)
+  // 'value'     -> all request parameters in the QR code / deep link. Gives a
+  //                ~2,500 character, version 35+ QR code most cameras can't read
+  REQUEST_MODE: (process.env.REQUEST_MODE || 'reference').toLowerCase(),
 
   // Optional client_id_scheme parameter for pre-1.0 wallets (e.g. redirect_uri)
   CLIENT_ID_SCHEME: process.env.CLIENT_ID_SCHEME || '',

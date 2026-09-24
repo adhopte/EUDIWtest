@@ -246,7 +246,20 @@ async function handleWalletResponse(body) {
   return { status: 200, body: { redirect_uri: redirectUri } };
 }
 
+/** One-line outcome of a transaction for the server log (no personal data). */
+function summary(state) {
+  const tx = [...transactions.values()].find((t) => t.state === state);
+  if (!tx) return { status: 'unknown_state' };
+  return {
+    rp: tx.rpId,
+    status: tx.status,
+    reasons: tx.reasons,
+    checks: (tx.results || []).map((r) => Object.fromEntries(Object.entries(r.checks).map(([k, v]) => [k, v.ok ? 'ok' : v.detail || 'fail'])))
+  };
+}
+
 module.exports = {
+  summary,
   createTransaction,
   getTransaction,
   authorizationRequest,
