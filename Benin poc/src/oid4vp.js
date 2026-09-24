@@ -23,17 +23,61 @@ function clientIdFor(rpId) {
   return rpId === 'bedc' ? config.BEDC_CLIENT_ID : config.FDA_CLIENT_ID;
 }
 
-function createTransaction(rpId) {
+/**
+ * Request variants for the wallet test page. Each one changes only how the
+ * request is delivered / identified; verification is identical. `env` is what
+ * to set on the server to make that variant the default.
+ */
+const VARIANTS = {
+  configured: {
+    profile: () => ({}),
+    env: () => ({})
+  },
+  legacy: {
+    // Same shape as the original root-level dummy RP: everything in the QR code,
+    // presentation_definition, bare client_id, no client_metadata
+    profile: () => ({ requestMode: 'value', queryLanguage: 'pex', clientMetadata: false, clientIdScheme: '' }),
+    env: () => ({ REQUEST_MODE: 'value', QUERY_LANGUAGE: 'pex', CLIENT_METADATA: 'false' })
+  },
+  dcql: {
+    // OpenID4VP 1.0 query language, request by reference
+    profile: () => ({ requestMode: 'reference', queryLanguage: 'dcql' }),
+    env: () => ({ REQUEST_MODE: 'reference', QUERY_LANGUAGE: 'dcql' })
+  },
+  redirect_uri: {
+    // Pre-1.0 drafts: client_id = response_uri with client_id_scheme=redirect_uri (unsigned requests allowed)
+    profile: () => ({ requestMode: 'value', queryLanguage: 'pex', clientId: RESPONSE_URI, clientIdScheme: 'redirect_uri', clientMetadata: false }),
+    env: () => ({ REQUEST_MODE: 'value', QUERY_LANGUAGE: 'pex', CLIENT_ID: RESPONSE_URI, CLIENT_ID_SCHEME: 'redirect_uri', CLIENT_METADATA: 'false' })
+  },
+  redirect_uri_prefix: {
+    // OpenID4VP 1.0: "redirect_uri:" client identifier prefix, DCQL
+    profile: () => ({ requestMode: 'value', queryLanguage: 'dcql', clientId: `redirect_uri:${RESPONSE_URI}`, clientIdScheme: '' }),
+    env: () => ({ REQUEST_MODE: 'value', QUERY_LANGUAGE: 'dcql', CLIENT_ID: `redirect_uri:${RESPONSE_URI}` })
+  }
+};
+
+function createTransaction(rpId, variant = 'configured') {
   const rp = RELYING_PARTIES[rpId];
   if (!rp) throw new Error(`unknown relying party ${rpId}`);
+  if (!VARIANTS[variant]) throw new Error(`unknown variant ${variant}`);
+  const profile = {
+    requestMode: config.REQUEST_MODE,
+    queryLanguage: config.QUERY_LANGUAGE,
+    clientId: clientIdFor(rpId),
+    clientIdScheme: config.CLIENT_ID_SCHEME,
+    clientMetadata: config.CLIENT_METADATA,
+    ...VARIANTS[variant].profile()
+  };
   const tx = {
+    variant,
+    profile,
     id: crypto.randomUUID(),
     rpId,
     state: crypto.randomBytes(16).toString('base64url'),
     nonce: crypto.randomBytes(16).toString('base64url'),
     browserKey: crypto.randomBytes(24).toString('base64url'),
     responseCode: crypto.randomBytes(24).toString('base64url'),
-    clientId: clientIdFor(rpId),
+    clientId: profile.clientId,
     responseUri: RESPONSE_URI,
     createdAt: Date.now(),
     status: 'pending'
@@ -117,11 +161,11 @@ function requestParameters(tx) {
     response_mode: 'direct_post',
     response_uri: tx.responseUri,
     nonce: tx.nonce,
-    state: tx.state,
-    client_metadata: clientMetadata()
+    state: tx.state
   };
-  if (config.CLIENT_ID_SCHEME) params.client_id_scheme = config.CLIENT_ID_SCHEME;
-  if (config.QUERY_LANGUAGE === 'dcql') params.dcql_query = dcqlQuery(rp);
+  if (tx.profile.clientMetadata) params.client_metadata = clientMetadata();
+  if (tx.profile.clientIdScheme) params.client_id_scheme = tx.profile.clientIdScheme;
+  if (tx.profile.queryLanguage === 'dcql') params.dcql_query = dcqlQuery(rp);
   else params.presentation_definition = presentationDefinition(rp);
   return params;
 }
@@ -137,9 +181,9 @@ function requestObject(tx) {
 function authorizationRequest(tx) {
   const scheme = config.WALLET_SCHEME.endsWith('://') ? config.WALLET_SCHEME : `${config.WALLET_SCHEME}://`;
   let query;
-  if (config.REQUEST_MODE === 'reference') {
+  if (tx.profile.requestMode === 'reference') {
     const q = { client_id: tx.clientId, request_uri: `${config.BASE_URL}/oid4vp/request/${tx.id}` };
-    if (config.CLIENT_ID_SCHEME) q.client_id_scheme = config.CLIENT_ID_SCHEME;
+    if (tx.profile.clientIdScheme) q.client_id_scheme = tx.profile.clientIdScheme;
     query = q;
   } else {
     const params = requestParameters(tx);
@@ -214,6 +258,7 @@ async function handleWalletResponse(body) {
   if (!tx || tx.status !== 'pending') {
     return { status: 400, body: { error: 'invalid_request', error_description: 'unknown, expired or already used state' } };
   }
+  tx.walletStep = 'response_received';
   if (body.error) {
     tx.status = 'rejected';
     tx.reasons = [`wallet_error:${body.error}`];
@@ -252,6 +297,7 @@ function summary(state) {
   if (!tx) return { status: 'unknown_state' };
   return {
     rp: tx.rpId,
+    variant: tx.variant,
     status: tx.status,
     reasons: tx.reasons,
     checks: (tx.results || []).map((r) => Object.fromEntries(Object.entries(r.checks).map(([k, v]) => [k, v.ok ? 'ok' : v.detail || 'fail'])))
@@ -259,6 +305,7 @@ function summary(state) {
 }
 
 module.exports = {
+  VARIANTS,
   summary,
   createTransaction,
   getTransaction,

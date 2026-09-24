@@ -73,6 +73,12 @@ test('the QR code uses request_uri and the wallet can fetch the request object',
   assert.equal(status.walletStep, 'request_fetched');
 });
 
+test('wallet test page renders one card per variant in French', async () => {
+  const html = await (await fetch(`${base}/fda/wallet-test?lang=fr`)).text();
+  assert.match(html, /Test de compatibilité du portefeuille/);
+  assert.equal((html.match(/class="card wt-card"/g) || []).length, 5);
+});
+
 test('transaction status is not visible to another browser', async () => {
   const create = await fetch(`${base}/api/bedc/transactions`, { method: 'POST' });
   const tx = await create.json();

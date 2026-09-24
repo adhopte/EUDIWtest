@@ -36,6 +36,10 @@ module.exports = {
   //                ~2,500 character, version 35+ QR code most cameras can't read
   REQUEST_MODE: (process.env.REQUEST_MODE || 'reference').toLowerCase(),
 
+  // Send client_metadata (vp_formats) in the request. Some older wallets
+  // reject unknown metadata; set to false to leave it out.
+  CLIENT_METADATA: bool(process.env.CLIENT_METADATA, true),
+
   // Optional client_id_scheme parameter for pre-1.0 wallets (e.g. redirect_uri)
   CLIENT_ID_SCHEME: process.env.CLIENT_ID_SCHEME || '',
 

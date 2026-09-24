@@ -117,11 +117,12 @@ app.get('/health', (req, res) => res.json({ ok: true, baseUrl: config.BASE_URL, 
 
 app.post('/api/:rp/transactions', requireRp, async (req, res, next) => {
   try {
-    const tx = oid4vp.createTransaction(req.rp.id);
+    const variant = oid4vp.VARIANTS[req.query.variant] ? req.query.variant : 'configured';
+    const tx = oid4vp.createTransaction(req.rp.id, variant);
     const { uri } = oid4vp.authorizationRequest(tx);
-    const qr = await QRCode.toDataURL(uri, { margin: 1, width: 360, errorCorrectionLevel: 'L' });
+    const qr = await QRCode.toDataURL(uri, { margin: 2, width: uri.length > 600 ? 720 : 360, errorCorrectionLevel: 'L' });
     res.cookie(`tx_${tx.id}`, tx.browserKey, cookieOpts(config.TX_TTL_MS));
-    res.json({ id: tx.id, uri, qr });
+    res.json({ id: tx.id, uri, qr, variant, env: oid4vp.VARIANTS[variant].env() });
   } catch (err) {
     next(err);
   }
@@ -147,7 +148,7 @@ app.post('/api/tx/:id/simulate', async (req, res, next) => {
     const rp = RELYING_PARTIES[tx.rpId];
     const args = { requested: rp.claims, clientId: tx.clientId, nonce: tx.nonce, responseUri: tx.responseUri };
     const presentation = rp.format === 'mso_mdoc' ? demoWallet.presentPidMdoc(args) : demoWallet.presentBirthCertificateSdJwt(args);
-    const vpToken = config.QUERY_LANGUAGE === 'dcql' ? JSON.stringify({ [rp.credential]: [presentation] }) : presentation;
+    const vpToken = tx.profile.queryLanguage === 'dcql' ? JSON.stringify({ [rp.credential]: [presentation] }) : presentation;
     await oid4vp.handleWalletResponse({ state: tx.state, vp_token: vpToken });
     res.json({ status: tx.status, reasons: tx.reasons || [] });
   } catch (err) {
@@ -186,6 +187,11 @@ app.post('/oid4vp/response', async (req, res, next) => {
 /* ---------------------------------------------------- relying parties */
 
 app.get('/:rp', requireRp, (req, res) => res.redirect(`/${req.rp.id}/${currentLogin(req, req.rp.id) ? 'dashboard' : 'login'}`));
+
+// Wallet compatibility test: one QR code per request variant
+app.get('/:rp/wallet-test', requireRp, (req, res) => {
+  res.render('wallet-test', { variants: Object.keys(oid4vp.VARIANTS) });
+});
 
 app.get('/:rp/login', requireRp, (req, res) => {
   if (currentLogin(req, req.rp.id)) return res.redirect(`/${req.rp.id}/dashboard`);

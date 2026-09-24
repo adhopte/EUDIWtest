@@ -41,6 +41,7 @@
         </div>
         <% if (config.DEMO_MODE) { %><p class="muted small"><%= t('login.demo_note') %></p><% } %>
         <p class="muted small"><%= t('login.no_wallet') %></p>
+        <p class="small"><a href="/<%= brand.id %>/wallet-test"><%= t('wt.title') %> →</a></p>
         <details class="wallet-link">
           <summary><%= t('login.show_link') %></summary>
           <textarea id="wallet-uri" rows="3" readonly></textarea>

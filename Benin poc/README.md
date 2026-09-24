@@ -66,6 +66,15 @@ To match what your wallet supports, set these in `.env`:
 
 ## Troubleshooting a real wallet
 
+**Wallet test page:** open `/bedc/wallet-test` or `/fda/wallet-test` (linked from
+each login page). It shows the same request five ways: current settings, all
+in the QR code (like the original test RP), OpenID4VP 1.0 DCQL,
+`client_id_scheme=redirect_uri`, and the 1.0 `redirect_uri:` prefix. Scan each
+one; the card turns amber when the wallet fetches or answers, and green when
+the login verifies. A green card lists the environment variables that make
+that variant the default. Dense QR codes (variants 2, 4 and 5) scan more
+easily on a large screen or with the browser zoomed in.
+
 Each wallet call is logged with a `[wallet]` prefix (in Render: **Logs**):
 
 | What you see | Meaning | What to try |

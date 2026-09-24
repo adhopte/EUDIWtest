@@ -126,3 +126,19 @@ test('the authorization request follows the rulebook identifiers', () => {
   assert.deepEqual(dcql.credentials[0].meta.vct_values, config.BIRTH_CERT_VCTS);
   assert.equal(dcql.credentials[0].format, 'dc+sd-jwt');
 });
+
+test('every wallet-test variant produces a request that verifies end to end', async () => {
+  for (const variant of Object.keys(oid4vp.VARIANTS)) {
+    for (const rpId of ['bedc', 'fda']) {
+      const tx = oid4vp.createTransaction(rpId, variant);
+      const { uri } = oid4vp.authorizationRequest(tx);
+      const query = new URL(uri.replace('openid4vp://', 'http://x/')).searchParams;
+      assert.equal(query.get('client_id'), tx.clientId, variant);
+      const vp = rpId === 'bedc' ? pidFor(tx) : birthCertFor(tx);
+      const token = tx.profile.queryLanguage === 'dcql' ? JSON.stringify({ [RELYING_PARTIES[rpId].credential]: [vp] }) : vp;
+      await oid4vp.handleWalletResponse({ state: tx.state, vp_token: token });
+      assert.equal(tx.status, 'verified', `${variant}/${rpId}: ${JSON.stringify(tx.reasons)}`);
+      assert.ok(tx.accepted.checks.holderBinding.ok, `${variant}/${rpId} holder binding`);
+    }
+  }
+});
