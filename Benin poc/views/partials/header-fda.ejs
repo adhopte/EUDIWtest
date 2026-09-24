@@ -1,0 +1,22 @@
+<header class="fda-header">
+  <div class="fda-topbar">
+    <div class="container topbar-inner">
+      <span>Tel: (00229) 52348115 · info@fdabenin.com</span>
+      <%- include('langswitch') %>
+    </div>
+  </div>
+  <div class="fda-nav">
+    <div class="container nav-inner">
+      <a href="/fda" class="brand-logo"><img src="/brand/fda-logo.jpg" alt="Ministère de la Santé — République du Bénin"></a>
+      <nav class="nav-links">
+        <% brand.nav.forEach(function (item, i) { %>
+          <a href="<%= i === 0 ? '/fda' : '#' %>" class="<%= i === 0 ? 'active' : '' %>"><%= t('fda.nav.' + item) %></a>
+        <% }) %>
+      </nav>
+      <% if (locals.login) { %>
+        <form method="post" action="/fda/logout"><button class="btn btn-outline btn-sm" type="submit"><%= t('common.logout') %></button></form>
+      <% } %>
+    </div>
+  </div>
+  <%- include('flag') %>
+</header>

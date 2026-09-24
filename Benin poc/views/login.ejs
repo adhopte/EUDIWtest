@@ -1,0 +1,62 @@
+<%- include('partials/head', { title: brand.name + ' — ' + t(brand.id + '.login.heading'), css: brand.css, icon: brand.icon }) %>
+<body class="rp rp-<%= brand.id %>">
+  <%- include('partials/header-' + brand.id) %>
+
+  <main class="container login-layout">
+    <a class="back-link" href="/">← <%= t('common.back_portal') %></a>
+
+    <div class="login-grid">
+      <section class="card login-card" id="login"
+        data-rp="<%= brand.id %>"
+        data-demo="<%= config.DEMO_MODE ? '1' : '' %>"
+        data-msg-waiting="<%= t('login.waiting') %>"
+        data-msg-verifying="<%= t('login.verifying') %>"
+        data-msg-success="<%= t('login.success') %>"
+        data-msg-rejected="<%= t('login.rejected') %>"
+        data-msg-expired="<%= t('login.expired') %>">
+        <p class="eyebrow"><%= t(brand.id + '.login.heading') %></p>
+        <h1><%= t('login.title') %></h1>
+        <p><%= t('login.intro', { credential: t(brand.credentialKey) }) %></p>
+
+        <% if (error) { %>
+          <div class="alert alert-error" role="alert">
+            <strong><%= t(error === 'expired' ? 'login.expired' : error === 'session' ? 'error.session' : 'login.rejected') %></strong>
+            <% if (reasons.length) { %><ul><% reasons.forEach(function (r) { %><li><code><%= r %></code></li><% }) %></ul><% } %>
+          </div>
+        <% } %>
+
+        <div class="qr-box">
+          <div class="qr" id="qr" aria-live="polite"><div class="spinner" aria-hidden="true"></div></div>
+          <p class="status" id="status" role="status"><%= t('login.waiting') %></p>
+        </div>
+
+        <div class="login-actions">
+          <a class="btn btn-primary" id="same-device" href="#"><%= t('login.same_device') %></a>
+          <button class="btn btn-outline hidden" id="retry" type="button"><%= t('login.retry') %></button>
+          <% if (config.DEMO_MODE) { %>
+            <button class="btn btn-ghost" id="simulate" type="button" title="<%= t('login.demo_note') %>"><%= t('login.demo') %></button>
+          <% } %>
+        </div>
+        <% if (config.DEMO_MODE) { %><p class="muted small"><%= t('login.demo_note') %></p><% } %>
+        <p class="muted small"><%= t('login.no_wallet') %></p>
+      </section>
+
+      <aside class="card request-card">
+        <h2><%= t('login.requested') %></h2>
+        <dl class="meta">
+          <div><dt><%= t('login.verifier') %></dt><dd><%= brand.name %></dd></div>
+          <div><dt><%= t('login.purpose') %></dt><dd><%= t('login.purpose.' + brand.id) %></dd></div>
+          <div><dt><%= t('login.format') %></dt><dd><code><%= rp.format %></code> · <code><%= rp.docType || rp.vcts[0] %></code></dd></div>
+        </dl>
+        <ul class="requested">
+          <% rp.claims.forEach(function (c) { %><li><span class="tick" aria-hidden="true">✓</span><%= t('claim.' + c) %></li><% }) %>
+        </ul>
+        <p class="muted small"><%= t('login.requested_note') %></p>
+      </aside>
+    </div>
+  </main>
+
+  <%- include('partials/footer') %>
+  <script src="/js/login.js" defer></script>
+</body>
+</html>

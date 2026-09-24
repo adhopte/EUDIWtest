@@ -1,0 +1,123 @@
+# Benin Government eServices — Relying Party PoC
+
+A bilingual (English / French) **Government eServices portal** with two
+relying-party websites that sign users in by verifying credentials from an
+EUDI-compatible wallet over **OpenID4VP**:
+
+| Service | Branding | Accepted credential | Format |
+|---|---|---|---|
+| **BEDC Electricity PLC** — electricity account | BEDC logo, deep green `#14532d` + yellow `#facc15` | Benin **PID** | ISO/IEC 18013-5 **mdoc** (`eu.europa.ec.eudi.pid.1`) |
+| **FDA Benin / Ministère de la Santé** — health portal | Ministry logo, purple `#5c1bbb`, Benin flag stripe | **Birth Certificate attestation** | **SD-JWT VC** (`dc+sd-jwt`) |
+
+After a successful presentation each site opens a dummy dashboard ("Welcome,
+<name>") that also shows the disclosed attributes and every verification check.
+
+Credential types, namespaces and claim names follow the **Benin PID / Birth
+Certificate Rulebook v1.1 (Standard-Namespace Edition)** — see
+[`src/rulebook.js`](src/rulebook.js).
+
+> ⚠️ Proof of concept. The dashboards contain dummy data, and the site is not
+> an official service of BEDC or the FDA / Ministry of Health. Their logos are
+> used here only to demo the branding.
+
+| Portal | BEDC (PID mdoc) | FDA (Birth Certificate SD-JWT, FR) |
+|---|---|---|
+| ![portal](docs/screenshots/portal-en.png) | ![bedc](docs/screenshots/bedc-dash-en.png) | ![fda](docs/screenshots/fda-dash-fr.png) |
+
+## Quick start
+
+```bash
+cd "Benin poc"
+npm install
+cp .env.example .env
+npm start            # http://localhost:3000
+npm test             # 15 tests: verifiers, tampering, web flow, i18n
+```
+
+Open http://localhost:3000, pick a service, then either scan the QR code with a
+wallet or click **Demo: simulate wallet**. The simulated wallet presents
+rulebook-conformant demo credentials, signed by a temporary *simulated ANIP*
+issuer that is created at start-up (`DEMO_MODE=true`).
+
+Change the language with the **EN / FR** switch on any page. The choice is
+kept in a cookie, and the browser's `Accept-Language` sets the default.
+
+## Using a real wallet
+
+The wallet sends its response to `<BASE_URL>/oid4vp/response`, so the server must
+be reachable from the phone:
+
+```bash
+ngrok http 3000                       # or deploy to Render / Railway / Fly
+BASE_URL=https://<your-url> npm start
+```
+
+To match what your wallet supports, set these in `.env`:
+
+- `QUERY_LANGUAGE=pex` (presentation_definition, OpenID4VP drafts) or `dcql`
+  (OpenID4VP 1.0 `dcql_query`).
+- `REQUEST_MODE=reference` for a short QR code that uses `request_uri`.
+- `CLIENT_ID` / `CLIENT_ID_SCHEME` to match your registered verifier identifier.
+- Put the ANIP IACA and issuer certificates in [`trust/`](trust/README.md). Set
+  `REQUIRE_TRUSTED_ISSUER=true` and `REQUIRE_HOLDER_BINDING=true` to make those
+  checks mandatory.
+- Set `DEMO_MODE=false` to hide the simulator.
+
+## What is requested (Rulebook “Verifier Matrix”)
+
+**BEDC — Identity verification (PID mdoc, namespace `eu.europa.ec.eudi.pid.1`)**
+`family_name, given_name, birth_date, nationality, issuing_authority, issuing_country, expiry_date`
+
+**FDA — Birth-date corroboration (Birth Certificate SD-JWT)**
+`family_name, given_name, birth_date, birth_place, gender, birth_record_reference, issuing_authority, issuance_date`
+
+Data minimisation: `portrait`, `resident_address` and
+`personal_administrative_number` (NPI) are never requested, and the parents'
+names (filiation) are not requested by the health portal. Every mdoc element is
+requested with `intent_to_retain: false`.
+
+## What is verified
+
+| Check | PID mdoc | Birth Certificate SD-JWT |
+|---|---|---|
+| Credential type | `docType` = `eu.europa.ec.eudi.pid.1` (document and MSO) | `vct` is in `BIRTH_CERT_VCTS` |
+| Issuer signature | COSE_Sign1 `issuerAuth` checked against the `x5chain` leaf | JWS checked against `x5c`, or against `<iss>/.well-known/jwt-vc-issuer` |
+| Trusted issuer | chain validated up to a certificate in `trust/` | same (`x5c`) or `TRUSTED_ISSUERS` |
+| Data integrity | each IssuerSignedItem digest matches the MSO `valueDigests` | each disclosure digest is in `_sd` / `...`; injected or duplicated disclosures are rejected |
+| Validity | MSO `validFrom` / `validUntil` | `exp` / `nbf` |
+| Holder binding | `DeviceAuth` signature over the OpenID4VP SessionTranscript, using the MSO device key | KB-JWT: `cnf.jwk` signature, `nonce`, `aud`, `sd_hash`, `iat` |
+| Replay | one-time `state` + `nonce` for each transaction | same |
+| Status | not checked in the PoC; the interface is kept open for it, as the rulebook allows | same |
+
+## Security of the login flow
+
+- Each transaction is bound to the browser that started it with a signed
+  cookie, so another browser cannot see its status or complete the login.
+- In the same-device flow, the wallet gets a `redirect_uri` that carries a
+  one-time `response_code`.
+- Sessions are in-memory, HttpOnly, SameSite=Lax cookies, and `Secure` when
+  `BASE_URL` is https.
+
+## Project layout
+
+```
+server.js                 Express app: portal, RP routes, OpenID4VP endpoints
+src/rulebook.js           Rulebook constants and per-RP claim requests
+src/oid4vp.js             Authorization request (PEX / DCQL, by value / reference), response handling, policy
+src/verify/mdoc.js        ISO 18013-5 DeviceResponse verification
+src/verify/sdjwt.js       SD-JWT VC + KB-JWT verification
+src/verify/trust.js       Trust anchors and X.509 chain validation
+src/demo/wallet.js        Simulated ANIP issuer and wallet (DEMO_MODE)
+src/i18n.js, locales/     English / French strings
+views/                    EJS templates (portal, login, dashboards)
+public/                   CSS per brand, login script, logos
+test/                     node:test suites
+```
+
+## Not in scope for the PoC
+
+- Encrypted responses (`direct_post.jwt`) and signed request objects
+  (`x509_san_dns` / `verifier_attestation`)
+- Checking Token Status Lists
+- Persistent storage for sessions and transactions (they are in memory; use
+  Redis or a database for more than one instance)

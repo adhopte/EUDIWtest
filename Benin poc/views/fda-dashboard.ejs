@@ -1,0 +1,68 @@
+<%- include('partials/head', { title: brand.name + ' — ' + t('fda.login.heading'), css: brand.css, icon: brand.icon }) %>
+<body class="rp rp-fda">
+  <%- include('partials/header-fda') %>
+
+  <section class="fda-hero">
+    <div class="container">
+      <p class="eyebrow"><%= t('fda.tagline') %></p>
+      <h1><%= t('fda.welcome', { name: claims.given_name + ' ' + claims.family_name }) %></h1>
+      <p><%= t('fda.welcome_sub') %></p>
+    </div>
+  </section>
+
+  <main class="container dashboard">
+    <div class="notice" role="note">⚠ <%= t('fda.alert') %></div>
+
+    <div class="two-col">
+      <section class="card">
+        <h2><%= t('fda.profile') %></h2>
+        <dl class="claims">
+          <div><dt><%= t('fda.health_id') %></dt><dd><strong><%= data.healthId %></strong></dd></div>
+          <% ['family_name', 'given_name', 'birth_date', 'birth_place', 'gender', 'birth_record_reference'].forEach(function (c) { if (claims[c] === undefined) return; %>
+            <div><dt><%= t('claim.' + c) %></dt><dd><%= formatClaim(c, claims[c], t, lang) %></dd></div>
+          <% }) %>
+        </dl>
+      </section>
+
+      <section class="card">
+        <h2><%= t('fda.appointments') %></h2>
+        <ul class="appointments">
+          <% data.appointments.forEach(function (a) { %>
+            <li>
+              <div class="appt-date"><span><%= formatDate(a.date, lang, { day: 'numeric' }) %></span><small><%= formatDate(a.date, lang, { month: 'short' }) %></small></div>
+              <div><strong><%= pick(a.service, lang) %></strong><br><span class="muted"><%= a.time %> · <%= a.place %></span></div>
+            </li>
+          <% }) %>
+        </ul>
+      </section>
+    </div>
+
+    <div class="two-col">
+      <section class="card">
+        <h2><%= t('fda.vaccinations') %></h2>
+        <table class="table">
+          <thead><tr><th><%= t('fda.vaccine') %></th><th><%= t('fda.date') %></th><th><%= t('fda.centre') %></th></tr></thead>
+          <tbody>
+            <% data.vaccinations.forEach(function (v) { %>
+              <tr><td><%= pick(v.vaccine, lang) %></td><td><%= formatDate(v.date, lang) %></td><td><%= v.centre %></td></tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="card">
+        <h2><%= t('fda.services') %></h2>
+        <ul class="service-links">
+          <% ['verify', 'report', 'certificate', 'permit'].forEach(function (s) { %>
+            <li><a href="#"><%= t('fda.service.' + s) %> <span aria-hidden="true">→</span></a></li>
+          <% }) %>
+        </ul>
+      </section>
+    </div>
+
+    <%- include('partials/verified') %>
+  </main>
+
+  <%- include('partials/footer') %>
+</body>
+</html>

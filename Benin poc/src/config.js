@@ -1,0 +1,69 @@
+'use strict';
+
+require('dotenv').config({ quiet: true });
+const path = require('path');
+
+function bool(value, fallback) {
+  if (value === undefined || value === '') return fallback;
+  return ['1', 'true', 'yes', 'on'].includes(String(value).toLowerCase());
+}
+
+function list(value, fallback) {
+  if (!value) return fallback;
+  return value.split(',').map((s) => s.trim()).filter(Boolean);
+}
+
+const BASE_URL = (process.env.BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
+const CLIENT_ID = process.env.CLIENT_ID || 'benin-eservices-rp.poc';
+
+module.exports = {
+  PORT: Number(process.env.PORT || 3000),
+  BASE_URL,
+
+  // OpenID4VP client identifiers. Each relying party can override the
+  // shared CLIENT_ID if they are registered separately in the ecosystem.
+  CLIENT_ID,
+  BEDC_CLIENT_ID: process.env.BEDC_CLIENT_ID || CLIENT_ID,
+  FDA_CLIENT_ID: process.env.FDA_CLIENT_ID || CLIENT_ID,
+
+  // 'pex'  -> presentation_definition (OpenID4VP draft 18-23, most deployed wallets)
+  // 'dcql' -> dcql_query (OpenID4VP 1.0)
+  QUERY_LANGUAGE: (process.env.QUERY_LANGUAGE || 'pex').toLowerCase(),
+
+  // 'value'     -> all request parameters in the QR code / deep link
+  // 'reference' -> short QR code with request_uri; the wallet fetches an
+  //                unsigned request object (alg "none") from this server
+  REQUEST_MODE: (process.env.REQUEST_MODE || 'value').toLowerCase(),
+
+  // Optional client_id_scheme parameter for pre-1.0 wallets (e.g. redirect_uri)
+  CLIENT_ID_SCHEME: process.env.CLIENT_ID_SCHEME || '',
+
+  // Custom URL scheme used for the same-device deep link / QR code.
+  WALLET_SCHEME: process.env.WALLET_SCHEME || 'openid4vp://',
+
+  // Verification policy. For the PoC the RP verifies everything it can and
+  // shows the result; set these to true to hard-fail on a missing check.
+  REQUIRE_TRUSTED_ISSUER: bool(process.env.REQUIRE_TRUSTED_ISSUER, false),
+  REQUIRE_HOLDER_BINDING: bool(process.env.REQUIRE_HOLDER_BINDING, false),
+
+  // Directory containing trusted issuer / IACA certificates (PEM).
+  TRUST_DIR: process.env.TRUST_DIR || path.join(__dirname, '..', 'trust'),
+
+  // SD-JWT issuers (iss values) whose keys may be resolved from
+  // <iss>/.well-known/jwt-vc-issuer when the credential carries no x5c.
+  TRUSTED_ISSUERS: list(process.env.TRUSTED_ISSUERS, []),
+
+  // Adds a "Simulate wallet" button that presents rulebook-conformant demo
+  // credentials signed by an ephemeral demo issuer. Never enable in production.
+  DEMO_MODE: bool(process.env.DEMO_MODE, true),
+
+  // Accepted SD-JWT VC types for the birth certificate attestation.
+  BIRTH_CERT_VCTS: list(process.env.BIRTH_CERT_VCTS, [
+    'https://credentials.benin.example/birth_certificate',
+    'eu.europa.ec.eudi.birth_certificate.1'
+  ]),
+
+  SESSION_SECRET: process.env.SESSION_SECRET || require('crypto').randomBytes(32).toString('hex'),
+  TX_TTL_MS: 10 * 60 * 1000,
+  LOGIN_TTL_MS: 30 * 60 * 1000
+};

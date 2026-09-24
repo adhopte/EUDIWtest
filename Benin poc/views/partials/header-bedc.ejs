@@ -1,0 +1,21 @@
+<header class="bedc-header">
+  <div class="bedc-topbar">
+    <div class="container topbar-inner">
+      <span><%= t('bedc.tagline') %></span>
+      <%- include('langswitch') %>
+    </div>
+  </div>
+  <div class="bedc-nav">
+    <div class="container nav-inner">
+      <a href="/bedc" class="brand-logo"><img src="/brand/bedc-logo.png" alt="BEDC Electricity PLC"></a>
+      <nav class="nav-links">
+        <% brand.nav.forEach(function (item, i) { %>
+          <a href="<%= i === 0 ? '/bedc' : '#' %>" class="<%= i === 0 ? 'active' : '' %>"><%= t('bedc.nav.' + item) %></a>
+        <% }) %>
+      </nav>
+      <% if (locals.login) { %>
+        <form method="post" action="/bedc/logout"><button class="btn btn-outline btn-sm" type="submit"><%= t('common.logout') %></button></form>
+      <% } %>
+    </div>
+  </div>
+</header>

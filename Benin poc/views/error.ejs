@@ -1,0 +1,17 @@
+<%- include('partials/head', { title: t('error.title') }) %>
+<body class="portal">
+  <header class="portal-header">
+    <%- include('partials/flag') %>
+    <div class="container portal-header-inner">
+      <a href="/" class="portal-brand"><img src="/brand/portal-icon.svg" alt="" width="40" height="40"><span><strong><%= t('portal.title') %></strong><small><%= t('common.republic') %></small></span></a>
+      <%- include('partials/langswitch') %>
+    </div>
+  </header>
+  <main class="container error-page">
+    <h1><%= t('error.title') %></h1>
+    <p><%= message %></p>
+    <a class="btn btn-primary" href="/"><%= t('common.back_portal') %></a>
+  </main>
+  <%- include('partials/footer') %>
+</body>
+</html>

@@ -1,0 +1,62 @@
+<%- include('partials/head', { title: t('portal.title') + ' — ' + t('common.republic') }) %>
+<body class="portal">
+  <header class="portal-header">
+    <%- include('partials/flag') %>
+    <div class="container portal-header-inner">
+      <a href="/" class="portal-brand">
+        <img src="/brand/portal-icon.svg" alt="" width="40" height="40">
+        <span>
+          <strong><%= t('portal.title') %></strong>
+          <small><%= t('common.republic') %></small>
+        </span>
+      </a>
+      <%- include('partials/langswitch') %>
+    </div>
+  </header>
+
+  <main>
+    <section class="portal-hero">
+      <div class="container">
+        <p class="eyebrow"><%= t('portal.subtitle') %></p>
+        <h1><%= t('portal.hero.title') %></h1>
+        <p class="lead"><%= t('portal.hero.text') %></p>
+        <h2 class="section-title"><%= t('portal.services') %></h2>
+      </div>
+    </section>
+
+    <section class="container">
+      <div class="service-grid">
+        <a class="service-card service-bedc" href="/bedc/login">
+          <div class="service-logo"><img src="/brand/bedc-logo.png" alt="BEDC Electricity PLC"></div>
+          <div class="service-body">
+            <h3><%= t('portal.bedc.name') %></h3>
+            <p><%= t('portal.bedc.desc') %></p>
+            <p class="accepts"><span><%= t('portal.accepts') %></span> <%= t('portal.bedc.credential') %></p>
+          </div>
+          <span class="btn service-cta"><%= t('portal.bedc.cta') %> →</span>
+        </a>
+        <a class="service-card service-fda" href="/fda/login">
+          <div class="service-logo"><img src="/brand/fda-logo.jpg" alt="FDA Benin — Ministère de la Santé"></div>
+          <div class="service-body">
+            <h3><%= t('portal.fda.name') %></h3>
+            <p><%= t('portal.fda.desc') %></p>
+            <p class="accepts"><span><%= t('portal.accepts') %></span> <%= t('portal.fda.credential') %></p>
+          </div>
+          <span class="btn service-cta"><%= t('portal.fda.cta') %> →</span>
+        </a>
+      </div>
+    </section>
+
+    <section class="container how">
+      <h2 class="section-title"><%= t('portal.how.title') %></h2>
+      <ol class="steps">
+        <% [1, 2, 3].forEach(function (n) { %>
+          <li><span class="step-n"><%= n %></span><h3><%= t('portal.how.' + n + '.title') %></h3><p><%= t('portal.how.' + n + '.text') %></p></li>
+        <% }) %>
+      </ol>
+    </section>
+  </main>
+
+  <%- include('partials/footer') %>
+</body>
+</html>
