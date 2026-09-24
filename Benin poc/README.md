@@ -89,7 +89,7 @@ the issuer's metadata and set `BIRTH_CERT_VCTS` to it. The request uses DCQL
 certificate either as SD-JWT VC or as mdoc (`eu.europa.ec.eudi.birth_certificate.1`,
 rulebook: "mdoc optional"), via DCQL `credential_sets`. The compact by-value QR
 request has room for one format only: `BIRTH_CERT_COMPACT_FORMAT` (default
-`mso_mdoc`, which is how SIGMA holds it). Only names and birth date are mandatory
+`dc+sd-jwt`, which is how SIGMA holds it). Only names and birth date are mandatory
 for matching; `birth_record_reference` is shared when the credential has it.
 
 SIGMA applies the HAIP profile, so responses must be encrypted

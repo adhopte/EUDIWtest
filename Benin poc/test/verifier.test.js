@@ -202,15 +202,15 @@ test('FDA also accepts the birth certificate as an mdoc (rulebook: mdoc optional
   assert.deepEqual(q.credential_sets[0].options, [['bc'], ['bcm']]);
 });
 
-test('the compact QR request asks for the birth certificate as mdoc, names and birth date mandatory', () => {
+test('the compact QR request asks for the birth certificate as SD-JWT, names and birth date mandatory', () => {
   const q = oid4vp.dcqlQuery(RELYING_PARTIES.fda, { compact: true });
   assert.equal(q.credentials.length, 1);
   const [bc] = q.credentials;
-  assert.equal(bc.format, 'mso_mdoc');
-  assert.equal(bc.meta.doctype_value, 'eu.europa.ec.eudi.birth_certificate.1');
-  const byId = Object.fromEntries(bc.claims.map((c) => [c.id, c.path[1]]));
+  assert.equal(bc.format, 'dc+sd-jwt');
+  assert.deepEqual(bc.meta.vct_values, config.BIRTH_CERT_VCTS);
+  const byId = Object.fromEntries(bc.claims.map((c) => [c.id, c.path[0]]));
   assert.deepEqual(bc.claim_sets[1].map((id) => byId[id]), ['family_name', 'given_name', 'birth_date']);
-  assert.ok(bc.claims.some((c) => c.path[1] === 'birth_record_reference'));
+  assert.ok(bc.claims.some((c) => c.path[0] === 'birth_record_reference'));
 });
 
 test('client_metadata declares every format used in the DCQL query', () => {

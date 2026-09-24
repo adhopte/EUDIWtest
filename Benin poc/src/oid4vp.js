@@ -327,7 +327,7 @@ function evaluate(result, rp) {
   const c = result.checks;
   if (result.errors.length) reasons.push(...result.errors);
   for (const name of ['credentialType', 'issuerSignature', 'disclosures', 'validity']) {
-    if (!c[name] || !c[name].ok) reasons.push(`check_failed:${name}`);
+    if (!c[name] || !c[name].ok) reasons.push(`check_failed:${name}${c[name] && c[name].detail ? `(${c[name].detail})` : ''}`);
   }
   if (config.REQUIRE_TRUSTED_ISSUER && !(c.trustedIssuer && c.trustedIssuer.ok)) reasons.push('check_failed:trustedIssuer');
   if (config.REQUIRE_HOLDER_BINDING && !(c.holderBinding && c.holderBinding.ok)) reasons.push('check_failed:holderBinding');

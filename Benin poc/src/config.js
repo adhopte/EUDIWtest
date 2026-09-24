@@ -75,9 +75,9 @@ module.exports = {
   DEMO_MODE: bool(process.env.DEMO_MODE, true),
 
   // Birth certificate format asked for in the compact by-value QR request, where only
-  // one format fits: 'mso_mdoc' (SIGMA holds it as mdoc, no vct) or 'dc+sd-jwt'.
+  // one format fits: 'dc+sd-jwt' (rulebook default, how SIGMA holds it) or 'mso_mdoc'.
   // Other request modes ask for both formats.
-  BIRTH_CERT_COMPACT_FORMAT: process.env.BIRTH_CERT_COMPACT_FORMAT || 'mso_mdoc',
+  BIRTH_CERT_COMPACT_FORMAT: process.env.BIRTH_CERT_COMPACT_FORMAT || 'dc+sd-jwt',
 
   // Accepted SD-JWT VC types for the birth certificate attestation.
   BIRTH_CERT_VCTS: list(process.env.BIRTH_CERT_VCTS, [
