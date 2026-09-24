@@ -140,6 +140,14 @@ app.get('/api/tx/:id', (req, res) => {
   res.json({ status: tx.status, reasons: tx.reasons || [], walletStep: tx.walletStep || null });
 });
 
+// The login page calls this when the user opens the wallet on the same device
+app.post('/api/tx/:id/same-device', (req, res) => {
+  const tx = txForBrowser(req);
+  if (!tx) return res.status(404).json({ status: 'expired' });
+  tx.sameDevice = true;
+  res.json({ ok: true });
+});
+
 app.post('/api/tx/:id/simulate', async (req, res, next) => {
   if (!config.DEMO_MODE) return res.status(404).end();
   const tx = txForBrowser(req);

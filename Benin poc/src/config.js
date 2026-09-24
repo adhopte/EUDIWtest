@@ -77,7 +77,8 @@ module.exports = {
   // Accepted SD-JWT VC types for the birth certificate attestation.
   BIRTH_CERT_VCTS: list(process.env.BIRTH_CERT_VCTS, [
     'https://credentials.benin.example/birth_certificate',
-    'eu.europa.ec.eudi.birth_certificate.1'
+    'eu.europa.ec.eudi.birth_certificate.1',
+    'urn:eu.europa.ec.eudi:birth_certificate:1'
   ]),
 
   SESSION_SECRET: process.env.SESSION_SECRET || require('crypto').randomBytes(32).toString('hex'),

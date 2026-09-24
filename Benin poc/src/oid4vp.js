@@ -143,6 +143,9 @@ function presentationDefinition(rp) {
  * DCQL query. `compact` leaves out intent_to_retain (optional in DCQL) to keep
  * by-value QR codes small enough for phone cameras.
  */
+// One-letter DCQL claim ids keep by-value QR codes small
+const claimId = (i) => String.fromCharCode(97 + i);
+
 function dcqlQuery(rp, { compact = false } = {}) {
   const isMdoc = rp.format === 'mso_mdoc';
   return {
@@ -151,9 +154,15 @@ function dcqlQuery(rp, { compact = false } = {}) {
         id: rp.credential,
         format: rp.format,
         meta: isMdoc ? { doctype_value: rp.docType } : { vct_values: rp.vcts },
-        claims: rp.claims.map((c) =>
-          isMdoc && !compact ? { path: [rp.namespace, c], intent_to_retain: false } : { path: isMdoc ? [rp.namespace, c] : [c] }
-        )
+        claims: rp.claims.map((c, i) => {
+          const claim = { path: isMdoc ? [rp.namespace, c] : [c] };
+          if (rp.claimSets) claim.id = claimId(i);
+          if (isMdoc && !compact) claim.intent_to_retain = false;
+          return claim;
+        }),
+        // Prefer every requested claim, but still match a credential that only
+        // has the claims the relying party cannot work without
+        ...(rp.claimSets && { claim_sets: [rp.claims.map((c, i) => claimId(i)), rp.required.map((c) => claimId(rp.claims.indexOf(c)))] })
       }
     ]
   };
@@ -338,6 +347,13 @@ async function handleWalletResponse(rawBody) {
     }
   }
   const tx = [...transactions.values()].find((t) => t.state === body.state);
+  if (tx && tx.status !== 'pending' && jweHeader) {
+    // The wallet re-sent a response (decrypted with this transaction's key, so it
+    // is the same wallet) for a login that is already finished: acknowledge it
+    // without processing it again.
+    tx.duplicateResponses = (tx.duplicateResponses || 0) + 1;
+    return { status: 200, body: {} };
+  }
   if (!tx || tx.status !== 'pending') {
     return { status: 400, body: { error: 'invalid_request', error_description: 'unknown, expired or already used state' } };
   }
@@ -374,7 +390,10 @@ async function handleWalletResponse(rawBody) {
   }
   tx.completedAt = Date.now();
 
-  // Same-device flow: the wallet sends the user's browser back to the RP.
+  // Same-device flow only: the wallet sends the user's browser back to the RP.
+  // In the cross-device (QR) flow the desktop page is already polling, and a
+  // redirect_uri makes some wallets (e.g. SIGMA) re-open the consent screen.
+  if (!tx.sameDevice) return { status: 200, body: {} };
   const redirectUri = `${config.BASE_URL}/${tx.rpId}/callback?tx=${tx.id}&response_code=${tx.responseCode}`;
   return { status: 200, body: { redirect_uri: redirectUri } };
 }
@@ -387,6 +406,8 @@ function summary(state) {
     rp: tx.rpId,
     variant: tx.variant,
     status: tx.status,
+    duplicates: tx.duplicateResponses || 0,
+    credentials: (tx.results || []).map((r) => `${r.format}:${r.vct || r.docType || '?'}`),
     reasons: tx.reasons,
     checks: (tx.results || []).map((r) => Object.fromEntries(Object.entries(r.checks).map(([k, v]) => [k, v.ok ? 'ok' : v.detail || 'fail'])))
   };

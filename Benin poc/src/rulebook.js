@@ -54,7 +54,7 @@ const RELYING_PARTIES = {
   },
   fda: {
     id: 'fda',
-    credential: 'birth_certificate',
+    credential: 'bc',
     format: 'dc+sd-jwt',
     vcts: BIRTH_CERTIFICATE.vcts,
     // Verifier Matrix: "Birth-date corroboration" (Birth Certificate part)
@@ -69,7 +69,10 @@ const RELYING_PARTIES = {
       'issuing_authority',
       'issuance_date'
     ],
-    required: ['family_name', 'given_name', 'birth_date', 'birth_record_reference']
+    required: ['family_name', 'given_name', 'birth_date', 'birth_record_reference'],
+    // The rulebook marks most birth certificate claims optional, so let the
+    // wallet match a credential that only has the required ones (DCQL claim_sets)
+    claimSets: true
   }
 };
 

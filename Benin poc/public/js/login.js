@@ -84,6 +84,11 @@
     document.body.appendChild(overlay);
   });
 
+  sameDevice.addEventListener('click', function () {
+    // Tell the server this is a same-device login so the wallet redirects back here
+    if (tx) navigator.sendBeacon('/api/tx/' + encodeURIComponent(tx.id) + '/same-device');
+  });
+
   retry.addEventListener('click', start);
   document.getElementById('copy-uri').addEventListener('click', function (e) {
     const field = document.getElementById('wallet-uri');

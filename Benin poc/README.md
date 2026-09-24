@@ -80,6 +80,13 @@ CLIENT_METADATA=false
 RESPONSE_MODE=direct_post.jwt
 ```
 
+**Birth certificate with SIGMA:** the wallet only offers a credential whose
+`vct` is listed in `BIRTH_CERT_VCTS` (the rulebook fixes the mdoc docType but not
+the SD-JWT `vct`). Check the `vct` of the birth certificate in the wallet or
+the issuer's metadata and set `BIRTH_CERT_VCTS` to it. The request uses DCQL
+`claim_sets`, so a certificate with only the required claims (names, birth date,
+`birth_record_reference`) still matches.
+
 SIGMA applies the HAIP profile, so responses must be encrypted
 (`direct_post.jwt`). Each transaction gets its own P-256 key, published in
 `client_metadata.jwks`; the wallet encrypts `{vp_token, state}` to it (JWE,

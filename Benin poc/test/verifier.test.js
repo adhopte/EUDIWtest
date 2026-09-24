@@ -35,7 +35,7 @@ test('BEDC accepts a valid PID mdoc and discloses only requested elements', asyn
   const tx = oid4vp.createTransaction('bedc');
   const res = await post(tx, pidFor(tx));
   assert.equal(res.status, 200);
-  assert.match(res.body.redirect_uri, /\/bedc\/callback\?tx=/);
+  assert.deepEqual(res.body, {}, 'no redirect_uri in the cross-device (QR) flow');
   assert.equal(tx.status, 'verified', JSON.stringify(tx.reasons));
   const { claims, checks } = tx.accepted;
   assert.equal(claims.family_name, 'KOSSI');
@@ -86,8 +86,30 @@ test('Concat KDF matches the RFC 7518 Appendix C test vector', () => {
 test('a state can only be used once', async () => {
   const tx = oid4vp.createTransaction('fda');
   await post(tx, birthCertFor(tx));
-  const replay = await post(tx, birthCertFor(tx));
+  assert.equal(tx.status, 'verified');
+  const accepted = tx.accepted;
+  // the same wallet re-sending (encrypted to this transaction's key) is acknowledged but not re-processed
+  const again = await post(tx, birthCertFor(tx));
+  assert.equal(again.status, 200);
+  assert.equal(tx.accepted, accepted);
+  assert.equal(tx.duplicateResponses, 1);
+  // an unencrypted replay of the state is refused
+  const replay = await oid4vp.handleWalletResponse({ state: tx.state, vp_token: '{}' });
   assert.equal(replay.status, 400);
+});
+
+test('same-device logins get a redirect_uri back to the relying party', async () => {
+  const tx = oid4vp.createTransaction('bedc');
+  tx.sameDevice = true;
+  const res = await post(tx, pidFor(tx));
+  assert.match(res.body.redirect_uri, /\/bedc\/callback\?tx=.+&response_code=/);
+});
+
+test('DCQL falls back to the essential claims with claim_sets', () => {
+  const q = oid4vp.dcqlQuery(RELYING_PARTIES.fda).credentials[0];
+  const byId = Object.fromEntries(q.claims.map((c) => [c.id, c.path[c.path.length - 1]]));
+  assert.deepEqual(q.claim_sets[1].map((id) => byId[id]), RELYING_PARTIES.fda.required);
+  assert.ok(q.claim_sets.flat().every((id) => q.claims.some((c) => c.id === id)));
 });
 
 test('an injected (unsigned) disclosure is rejected', async () => {
