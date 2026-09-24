@@ -147,25 +147,35 @@ function presentationDefinition(rp) {
 const claimId = (i) => String.fromCharCode(97 + i);
 
 function dcqlQuery(rp, { compact = false } = {}) {
-  const isMdoc = rp.format === 'mso_mdoc';
-  return {
-    credentials: [
-      {
-        id: rp.credential,
-        format: rp.format,
-        meta: isMdoc ? { doctype_value: rp.docType } : { vct_values: rp.vcts },
-        claims: rp.claims.map((c, i) => {
-          const claim = { path: isMdoc ? [rp.namespace, c] : [c] };
-          if (rp.claimSets) claim.id = claimId(i);
-          if (isMdoc && !compact) claim.intent_to_retain = false;
-          return claim;
-        }),
-        // Prefer every requested claim, but still match a credential that only
-        // has the claims the relying party cannot work without
-        ...(rp.claimSets && { claim_sets: [rp.claims.map((c, i) => claimId(i)), rp.required.map((c) => claimId(rp.claims.indexOf(c)))] })
-      }
-    ]
+  // Compact (by-value QR) requests with alternative formats only ask for the
+  // required claims, without claim_sets, so the QR code stays scannable.
+  const minimal = compact && Boolean(rp.alternative);
+  const claims = minimal ? rp.required : rp.claims;
+  const useSets = rp.claimSets && !minimal;
+  const credentialQuery = (q) => {
+    const isMdoc = q.format === 'mso_mdoc';
+    return {
+      id: q.credential,
+      format: q.format,
+      meta: isMdoc ? { doctype_value: q.docType } : { vct_values: q.vcts },
+      claims: claims.map((c, i) => {
+        const claim = { path: isMdoc ? [q.namespace, c] : [c] };
+        if (useSets) claim.id = claimId(i);
+        if (isMdoc && !compact) claim.intent_to_retain = false;
+        return claim;
+      }),
+      // Prefer every requested claim, but still match a credential that only
+      // has the claims the relying party cannot work without
+      ...(useSets && { claim_sets: [claims.map((c, i) => claimId(i)), rp.required.map((c) => claimId(claims.indexOf(c)))] })
+    };
   };
+  const query = { credentials: [credentialQuery(rp)] };
+  if (rp.alternative) {
+    query.credentials.push(credentialQuery({ ...rp.alternative }));
+    // either format satisfies the request
+    query.credential_sets = [{ options: [[rp.credential], [rp.alternative.credential]] }];
+  }
+  return query;
 }
 
 const VP_FORMATS_SUPPORTED = {
@@ -285,9 +295,10 @@ async function verifyPresentation(presentation, tx, jweHeader) {
       })
     ];
   }
+  const mdoc = rp.format === 'mso_mdoc' ? rp : rp.alternative || {};
   return verifyDeviceResponse(presentation, {
-    docType: rp.docType,
-    namespace: rp.namespace,
+    docType: mdoc.docType,
+    namespace: mdoc.namespace,
     clientId: tx.clientId,
     nonce: tx.nonce,
     responseUri: tx.responseUri,
@@ -308,8 +319,8 @@ function evaluate(result, rp) {
   }
   if (config.REQUIRE_TRUSTED_ISSUER && !(c.trustedIssuer && c.trustedIssuer.ok)) reasons.push('check_failed:trustedIssuer');
   if (config.REQUIRE_HOLDER_BINDING && !(c.holderBinding && c.holderBinding.ok)) reasons.push('check_failed:holderBinding');
-  const expectedFormat = rp.format === 'mso_mdoc' ? 'mso_mdoc' : 'dc+sd-jwt';
-  if (result.format !== expectedFormat) reasons.push(`unexpected_format:${result.format}`);
+  const accepted = [rp.format, rp.alternative && rp.alternative.format].filter(Boolean);
+  if (!accepted.includes(result.format)) reasons.push(`unexpected_format:${result.format}`);
   for (const claim of rp.required) {
     if (result.claims[claim] === undefined) reasons.push(`missing_claim:${claim}`);
   }

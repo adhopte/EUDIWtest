@@ -128,11 +128,11 @@ function mdocValue(name, value) {
 }
 
 /**
- * Issues a PID mdoc and immediately presents the requested elements as a
+ * Issues an mdoc and immediately presents the requested elements as a
  * base64url DeviceResponse bound to the verifier's request.
  */
-function presentPidMdoc({ requested, clientId, nonce, responseUri, jwkThumbprint = null, overrides = {} }) {
-  const data = { ...PERSONAS.pid, ...overrides };
+function presentMdoc({ docType, namespace, persona, requested, clientId, nonce, responseUri, jwkThumbprint = null, overrides = {} }) {
+  const data = { ...persona, ...overrides };
   const device = newDeviceKey();
   const jwk = device.publicKey.export({ format: 'jwk' });
   const now = new Date();
@@ -147,11 +147,11 @@ function presentPidMdoc({ requested, clientId, nonce, responseUri, jwkThumbprint
   const mso = {
     version: '1.0',
     digestAlgorithm: 'SHA-256',
-    valueDigests: { [PID.namespace]: digests },
+    valueDigests: { [namespace]: digests },
     deviceKeyInfo: {
       deviceKey: new Map([[1, 2], [-1, 1], [-2, b64u.decode(jwk.x)], [-3, b64u.decode(jwk.y)]])
     },
-    docType: PID.docType,
+    docType: docType,
     validityInfo: {
       signed: tdate(now),
       validFrom: tdate(new Date(now.getTime() - 3600 * 1000)),
@@ -167,7 +167,7 @@ function presentPidMdoc({ requested, clientId, nonce, responseUri, jwkThumbprint
   // DeviceAuth over the OpenID4VP SessionTranscript
   const deviceNameSpaces = new Tag(encode(new Map()), 24);
   const [st] = sessionTranscripts({ clientId, nonce, responseUri, jwkThumbprint });
-  const deviceAuthBytes = encode(new Tag(encode(['DeviceAuthentication', st.value, PID.docType, deviceNameSpaces]), 24));
+  const deviceAuthBytes = encode(new Tag(encode(['DeviceAuthentication', st.value, docType, deviceNameSpaces]), 24));
   const devProtected = encode(new Map([[1, -7]]));
   const devSig = sign('ES256', device.privateKey, encode(['Signature1', devProtected, Buffer.alloc(0), deviceAuthBytes]));
 
@@ -175,9 +175,9 @@ function presentPidMdoc({ requested, clientId, nonce, responseUri, jwkThumbprint
     version: '1.0',
     documents: [
       {
-        docType: PID.docType,
+        docType: docType,
         issuerSigned: {
-          nameSpaces: { [PID.namespace]: items.filter((it) => requested.includes(it.name)).map((it) => it.tagged) },
+          nameSpaces: { [namespace]: items.filter((it) => requested.includes(it.name)).map((it) => it.tagged) },
           issuerAuth
         },
         deviceSigned: {
@@ -189,6 +189,16 @@ function presentPidMdoc({ requested, clientId, nonce, responseUri, jwkThumbprint
     status: 0
   };
   return Buffer.from(encode(deviceResponse)).toString('base64url');
+}
+
+/** PID mdoc (eu.europa.ec.eudi.pid.1) for the BEDC relying party. */
+function presentPidMdoc(args) {
+  return presentMdoc({ docType: PID.docType, namespace: PID.namespace, persona: PERSONAS.pid, ...args });
+}
+
+/** Birth certificate as mdoc (rulebook: "mdoc optional, same trimmed shape"). */
+function presentBirthCertificateMdoc(args) {
+  return presentMdoc({ docType: BIRTH_CERTIFICATE.docType, namespace: BIRTH_CERTIFICATE.namespace, persona: PERSONAS.birth_certificate, ...args });
 }
 
 /* -------------------------------------------------------------- SD-JWT */
@@ -255,4 +265,4 @@ function respond(tx, rp, { vpOverride, presentationArgs = {} } = {}) {
   return { response: jwe.encrypt(payload, tx.encryption.jwk, { apv: Buffer.from(tx.nonce), apu: crypto.randomBytes(16) }) };
 }
 
-module.exports = { init, presentPidMdoc, presentBirthCertificateSdJwt, respond, PERSONAS };
+module.exports = { init, presentPidMdoc, presentBirthCertificateMdoc, presentBirthCertificateSdJwt, respond, PERSONAS };

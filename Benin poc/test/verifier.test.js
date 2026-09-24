@@ -186,3 +186,18 @@ test('every wallet-test variant produces a request that verifies end to end', as
     }
   }
 });
+
+test('FDA also accepts the birth certificate as an mdoc (rulebook: mdoc optional)', async () => {
+  const tx = oid4vp.createTransaction('fda');
+  const jwkThumbprint = tx.encryption ? jwe.thumbprint(tx.encryption.jwk) : null;
+  const vp = wallet.presentBirthCertificateMdoc({ requested: RELYING_PARTIES.fda.claims, clientId: tx.clientId, nonce: tx.nonce, responseUri: tx.responseUri, jwkThumbprint });
+  await post(tx, vp);
+  assert.equal(tx.status, 'verified', JSON.stringify(tx.reasons));
+  assert.equal(tx.accepted.format, 'mso_mdoc');
+  assert.equal(tx.accepted.docType, 'eu.europa.ec.eudi.birth_certificate.1');
+  assert.equal(tx.accepted.claims.birth_record_reference, 'BJ-PN-1995-004518');
+  assert.ok(tx.accepted.checks.holderBinding.ok);
+
+  const q = oid4vp.dcqlQuery(RELYING_PARTIES.fda);
+  assert.deepEqual(q.credential_sets[0].options, [['bc'], ['bcm']]);
+});

@@ -72,7 +72,15 @@ const RELYING_PARTIES = {
     required: ['family_name', 'given_name', 'birth_date', 'birth_record_reference'],
     // The rulebook marks most birth certificate claims optional, so let the
     // wallet match a credential that only has the required ones (DCQL claim_sets)
-    claimSets: true
+    claimSets: true,
+    // Rulebook: "Birth Certificate Attestation – SD-JWT (mdoc optional, same
+    // trimmed shape)". Also accept the mdoc form; the wallet offers whichever it holds.
+    alternative: {
+      credential: 'bcm',
+      format: 'mso_mdoc',
+      docType: BIRTH_CERTIFICATE.docType,
+      namespace: BIRTH_CERTIFICATE.namespace
+    }
   }
 };
 
