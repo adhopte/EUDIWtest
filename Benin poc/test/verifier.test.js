@@ -212,3 +212,18 @@ test('the compact QR request asks for the birth certificate as mdoc, names and b
   assert.deepEqual(bc.claim_sets[1].map((id) => byId[id]), ['family_name', 'given_name', 'birth_date']);
   assert.ok(bc.claims.some((c) => c.path[1] === 'birth_record_reference'));
 });
+
+test('client_metadata declares every format used in the DCQL query', () => {
+  for (const variant of Object.keys(oid4vp.VARIANTS)) {
+    for (const rpId of ['bedc', 'fda']) {
+      const tx = oid4vp.createTransaction(rpId, variant);
+      const { uri } = oid4vp.authorizationRequest(tx);
+      const q = new URL(uri.replace('openid4vp://', 'http://x/')).searchParams;
+      const params = q.get('request_uri') ? null : q;
+      if (!params || !params.get('dcql_query') || !params.get('client_metadata')) continue;
+      const formats = JSON.parse(params.get('dcql_query')).credentials.map((c) => c.format);
+      const declared = Object.keys(JSON.parse(params.get('client_metadata')).vp_formats_supported);
+      for (const f of formats) assert.ok(declared.includes(f), `${variant}/${rpId}: ${f} not in ${declared}`);
+    }
+  }
+});

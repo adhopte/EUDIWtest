@@ -199,11 +199,12 @@ const VP_FORMATS_SUPPORTED_HAIP = {
  * response-encryption part (jwks, encrypted_response_enc_values_supported) is
  * always sent when the response is encrypted, since the wallet needs the key.
  */
-function clientMetadata(tx) {
+function clientMetadata(tx, formats) {
   const sdJwt = { 'sd-jwt_alg_values': SIGNING_ALGS, 'kb-jwt_alg_values': SIGNING_ALGS };
-  const format = RELYING_PARTIES[tx.rpId].format;
   const full = tx.profile.clientMetadata;
-  const md = { vp_formats_supported: { [format]: (full ? VP_FORMATS_SUPPORTED : VP_FORMATS_SUPPORTED_HAIP)[format] } };
+  const table = full ? VP_FORMATS_SUPPORTED : VP_FORMATS_SUPPORTED_HAIP;
+  // Wallets require vp_formats_supported to cover every format in the query
+  const md = { vp_formats_supported: Object.fromEntries(formats.map((f) => [f, table[f]])) };
   if (full) {
     md.client_name = 'Benin Government eServices';
     md.vp_formats = { mso_mdoc: { alg: SIGNING_ALGS }, 'vc+sd-jwt': sdJwt, 'dc+sd-jwt': sdJwt };
@@ -231,10 +232,16 @@ function requestParameters(tx) {
     nonce: tx.nonce,
     state: tx.state
   };
-  if (tx.profile.clientMetadata || tx.encryption) params.client_metadata = clientMetadata(tx);
+  let formats;
+  if (tx.profile.queryLanguage === 'dcql') {
+    params.dcql_query = dcqlQuery(rp, { compact: tx.profile.requestMode === 'value' && !tx.profile.clientMetadata });
+    formats = [...new Set(params.dcql_query.credentials.map((c) => c.format))];
+  } else {
+    params.presentation_definition = presentationDefinition(rp);
+    formats = [rp.format];
+  }
+  if (tx.profile.clientMetadata || tx.encryption) params.client_metadata = clientMetadata(tx, formats);
   if (tx.profile.clientIdScheme) params.client_id_scheme = tx.profile.clientIdScheme;
-  if (tx.profile.queryLanguage === 'dcql') params.dcql_query = dcqlQuery(rp, { compact: tx.profile.requestMode === 'value' && !tx.profile.clientMetadata });
-  else params.presentation_definition = presentationDefinition(rp);
   return params;
 }
 
