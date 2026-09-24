@@ -16,6 +16,7 @@ const x509 = require('@peculiar/x509');
 const { Tag } = require('cbor-x');
 const { encode, sessionTranscripts } = require('../verify/mdoc');
 const { b64u, sign, signJws, sha } = require('../verify/jose');
+const jwe = require('../verify/jwe');
 const trust = require('../verify/trust');
 const { PID, BIRTH_CERTIFICATE, ISSUING_AUTHORITY, ISSUING_COUNTRY } = require('../rulebook');
 
@@ -130,7 +131,7 @@ function mdocValue(name, value) {
  * Issues a PID mdoc and immediately presents the requested elements as a
  * base64url DeviceResponse bound to the verifier's request.
  */
-function presentPidMdoc({ requested, clientId, nonce, responseUri, overrides = {} }) {
+function presentPidMdoc({ requested, clientId, nonce, responseUri, jwkThumbprint = null, overrides = {} }) {
   const data = { ...PERSONAS.pid, ...overrides };
   const device = newDeviceKey();
   const jwk = device.publicKey.export({ format: 'jwk' });
@@ -165,7 +166,7 @@ function presentPidMdoc({ requested, clientId, nonce, responseUri, overrides = {
 
   // DeviceAuth over the OpenID4VP SessionTranscript
   const deviceNameSpaces = new Tag(encode(new Map()), 24);
-  const [st] = sessionTranscripts({ clientId, nonce, responseUri });
+  const [st] = sessionTranscripts({ clientId, nonce, responseUri, jwkThumbprint });
   const deviceAuthBytes = encode(new Tag(encode(['DeviceAuthentication', st.value, PID.docType, deviceNameSpaces]), 24));
   const devProtected = encode(new Map([[1, -7]]));
   const devSig = sign('ES256', device.privateKey, encode(['Signature1', devProtected, Buffer.alloc(0), deviceAuthBytes]));
@@ -237,4 +238,21 @@ function presentBirthCertificateSdJwt({ requested, clientId, nonce, overrides = 
   return presented + kbJwt;
 }
 
-module.exports = { init, presentPidMdoc, presentBirthCertificateSdJwt, PERSONAS };
+/**
+ * Presents the relying party's requested credential for a transaction and
+ * returns the body the wallet would POST to response_uri (encrypted with the
+ * verifier's key when response_mode=direct_post.jwt).
+ */
+function respond(tx, rp, { vpOverride, presentationArgs = {} } = {}) {
+  const jwkThumbprint = tx.encryption ? jwe.thumbprint(tx.encryption.jwk) : null;
+  const args = { requested: rp.claims, clientId: tx.clientId, nonce: tx.nonce, responseUri: tx.responseUri, jwkThumbprint, ...presentationArgs };
+  const presentation = vpOverride || (rp.format === 'mso_mdoc' ? presentPidMdoc(args) : presentBirthCertificateSdJwt(args));
+  const vpToken = tx.profile.queryLanguage === 'dcql' ? { [rp.credential]: [presentation] } : presentation;
+  if (!tx.encryption) {
+    return { state: tx.state, vp_token: typeof vpToken === 'string' ? vpToken : JSON.stringify(vpToken) };
+  }
+  const payload = JSON.stringify({ state: tx.state, vp_token: vpToken });
+  return { response: jwe.encrypt(payload, tx.encryption.jwk, { apv: Buffer.from(tx.nonce), apu: crypto.randomBytes(16) }) };
+}
+
+module.exports = { init, presentPidMdoc, presentBirthCertificateSdJwt, respond, PERSONAS };

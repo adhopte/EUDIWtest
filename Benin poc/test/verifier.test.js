@@ -15,8 +15,16 @@ const { RELYING_PARTIES, PID } = require('../src/rulebook');
 
 test.before(() => wallet.init());
 
+const jwe = require('../src/verify/jwe');
+
 function pidFor(tx, extra = {}) {
-  return wallet.presentPidMdoc({ requested: RELYING_PARTIES.bedc.claims, clientId: tx.clientId, nonce: tx.nonce, responseUri: tx.responseUri, ...extra });
+  const jwkThumbprint = tx.encryption ? jwe.thumbprint(tx.encryption.jwk) : null;
+  return wallet.presentPidMdoc({ requested: RELYING_PARTIES.bedc.claims, clientId: tx.clientId, nonce: tx.nonce, responseUri: tx.responseUri, jwkThumbprint, ...extra });
+}
+
+/** Posts a presentation the way the wallet would (DCQL-shaped, encrypted when requested). */
+function post(tx, vp) {
+  return oid4vp.handleWalletResponse(wallet.respond(tx, RELYING_PARTIES[tx.rpId], { vpOverride: vp }));
 }
 
 function birthCertFor(tx, extra = {}) {
@@ -25,7 +33,7 @@ function birthCertFor(tx, extra = {}) {
 
 test('BEDC accepts a valid PID mdoc and discloses only requested elements', async () => {
   const tx = oid4vp.createTransaction('bedc');
-  const res = await oid4vp.handleWalletResponse({ state: tx.state, vp_token: pidFor(tx) });
+  const res = await post(tx, pidFor(tx));
   assert.equal(res.status, 200);
   assert.match(res.body.redirect_uri, /\/bedc\/callback\?tx=/);
   assert.equal(tx.status, 'verified', JSON.stringify(tx.reasons));
@@ -43,7 +51,7 @@ test('BEDC accepts a valid PID mdoc and discloses only requested elements', asyn
 
 test('FDA accepts a valid Birth Certificate SD-JWT with key binding', async () => {
   const tx = oid4vp.createTransaction('fda');
-  await oid4vp.handleWalletResponse({ state: tx.state, vp_token: birthCertFor(tx) });
+  await post(tx, birthCertFor(tx));
   assert.equal(tx.status, 'verified', JSON.stringify(tx.reasons));
   const { claims, checks } = tx.accepted;
   assert.equal(claims.birth_record_reference, 'BJ-PN-1995-004518');
@@ -53,17 +61,32 @@ test('FDA accepts a valid Birth Certificate SD-JWT with key binding', async () =
   assert.ok(checks.trustedIssuer.ok, checks.trustedIssuer.detail);
 });
 
-test('DCQL-shaped vp_token objects are accepted', async () => {
+test('an unencrypted response is refused when direct_post.jwt was requested', async () => {
   const tx = oid4vp.createTransaction('fda');
-  const vpToken = JSON.stringify({ birth_certificate: [birthCertFor(tx)] });
-  await oid4vp.handleWalletResponse({ state: tx.state, vp_token: vpToken });
-  assert.equal(tx.status, 'verified', JSON.stringify(tx.reasons));
+  assert.ok(tx.encryption, 'default response mode is direct_post.jwt');
+  const res = await oid4vp.handleWalletResponse({ state: tx.state, vp_token: JSON.stringify({ birth_certificate: [birthCertFor(tx)] }) });
+  assert.equal(res.status, 400);
+  assert.equal(tx.status, 'rejected');
+});
+
+test('a response encrypted to another key is refused', async () => {
+  const tx = oid4vp.createTransaction('fda');
+  const other = jwe.generateEncryptionKey(tx.encryption.jwk.kid);
+  const response = jwe.encrypt(JSON.stringify({ state: tx.state, vp_token: { birth_certificate: [birthCertFor(tx)] } }), other.jwk);
+  const res = await oid4vp.handleWalletResponse({ response });
+  assert.equal(res.status, 400);
+  assert.equal(tx.status, 'pending');
+});
+
+test('Concat KDF matches the RFC 7518 Appendix C test vector', () => {
+  const z = Buffer.from([158, 86, 217, 29, 129, 113, 53, 211, 114, 131, 66, 131, 191, 132, 38, 156, 251, 49, 110, 163, 218, 128, 106, 72, 246, 218, 167, 121, 140, 254, 144, 196]);
+  assert.equal(jwe.concatKdf(z, 'A128GCM', Buffer.from('Alice'), Buffer.from('Bob')).toString('base64url'), 'VqqN6vgjbSBcIijNcacQGg');
 });
 
 test('a state can only be used once', async () => {
   const tx = oid4vp.createTransaction('fda');
-  await oid4vp.handleWalletResponse({ state: tx.state, vp_token: birthCertFor(tx) });
-  const replay = await oid4vp.handleWalletResponse({ state: tx.state, vp_token: birthCertFor(tx) });
+  await post(tx, birthCertFor(tx));
+  const replay = await post(tx, birthCertFor(tx));
   assert.equal(replay.status, 400);
 });
 
@@ -73,7 +96,7 @@ test('an injected (unsigned) disclosure is rejected', async () => {
   const parts = vp.split('~');
   const forged = Buffer.from(JSON.stringify(['salt', 'birth_date', '2010-01-01'])).toString('base64url');
   parts.splice(1, 0, forged);
-  await oid4vp.handleWalletResponse({ state: tx.state, vp_token: parts.join('~') });
+  await post(tx, parts.join('~'));
   assert.equal(tx.status, 'rejected');
 });
 
@@ -83,7 +106,7 @@ test('an SD-JWT bound to another nonce fails holder binding', async () => {
   const original = config.REQUIRE_HOLDER_BINDING;
   config.REQUIRE_HOLDER_BINDING = true;
   try {
-    await oid4vp.handleWalletResponse({ state: tx.state, vp_token: vp });
+    await post(tx, vp);
   } finally {
     config.REQUIRE_HOLDER_BINDING = original;
   }
@@ -99,7 +122,7 @@ test('a tampered mdoc element value is rejected (digest mismatch)', async () => 
   const item = decode(items[idx].value);
   item.elementValue = 'IMPOSTOR';
   items[idx] = new Tag(encode(item), 24);
-  await oid4vp.handleWalletResponse({ state: tx.state, vp_token: Buffer.from(encode(response)).toString('base64url') });
+  await post(tx, Buffer.from(encode(response)).toString('base64url'));
   assert.equal(tx.status, 'rejected');
   assert.ok(tx.reasons.some((r) => r.startsWith('digest_mismatch')), JSON.stringify(tx.reasons));
 });
@@ -107,14 +130,14 @@ test('a tampered mdoc element value is rejected (digest mismatch)', async () => 
 test('an mdoc presented for another verifier fails device authentication', async () => {
   const tx = oid4vp.createTransaction('bedc');
   const vp = pidFor(tx, { clientId: 'some-other-verifier' });
-  await oid4vp.handleWalletResponse({ state: tx.state, vp_token: vp });
+  await post(tx, vp);
   assert.equal(tx.results[0].checks.holderBinding.ok, false);
 });
 
 test('each relying party only accepts its own credential', async () => {
   const tx = oid4vp.createTransaction('bedc');
   const sdJwt = wallet.presentBirthCertificateSdJwt({ requested: RELYING_PARTIES.fda.claims, clientId: tx.clientId, nonce: tx.nonce });
-  await oid4vp.handleWalletResponse({ state: tx.state, vp_token: sdJwt });
+  await post(tx, sdJwt);
   assert.equal(tx.status, 'rejected');
 });
 
@@ -135,8 +158,7 @@ test('every wallet-test variant produces a request that verifies end to end', as
       const query = new URL(uri.replace('openid4vp://', 'http://x/')).searchParams;
       assert.equal(query.get('client_id'), tx.clientId, variant);
       const vp = rpId === 'bedc' ? pidFor(tx) : birthCertFor(tx);
-      const token = tx.profile.queryLanguage === 'dcql' ? JSON.stringify({ [RELYING_PARTIES[rpId].credential]: [vp] }) : vp;
-      await oid4vp.handleWalletResponse({ state: tx.state, vp_token: token });
+      await post(tx, vp);
       assert.equal(tx.status, 'verified', `${variant}/${rpId}: ${JSON.stringify(tx.reasons)}`);
       assert.ok(tx.accepted.checks.holderBinding.ok, `${variant}/${rpId} holder binding`);
     }

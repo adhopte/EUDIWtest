@@ -5,6 +5,7 @@ const config = require('./config');
 const { RELYING_PARTIES } = require('./rulebook');
 const { verifySdJwtPresentation } = require('./verify/sdjwt');
 const { verifyDeviceResponse } = require('./verify/mdoc');
+const jwe = require('./verify/jwe');
 
 const SIGNING_ALGS = ['ES256', 'ES384', 'ES512', 'EdDSA'];
 const RESPONSE_URI = `${config.BASE_URL}/oid4vp/response`;
@@ -36,8 +37,8 @@ const VARIANTS = {
   legacy: {
     // Same shape as the original root-level dummy RP: everything in the QR code,
     // presentation_definition, bare client_id, no client_metadata
-    profile: () => ({ requestMode: 'value', queryLanguage: 'pex', clientMetadata: false, clientIdScheme: '' }),
-    env: () => ({ REQUEST_MODE: 'value', QUERY_LANGUAGE: 'pex', CLIENT_METADATA: 'false' })
+    profile: () => ({ requestMode: 'value', queryLanguage: 'pex', clientMetadata: false, clientIdScheme: '', responseMode: 'direct_post' }),
+    env: () => ({ REQUEST_MODE: 'value', QUERY_LANGUAGE: 'pex', CLIENT_METADATA: 'false', RESPONSE_MODE: 'direct_post' })
   },
   dcql: {
     // OpenID4VP 1.0 query language, request by reference
@@ -51,10 +52,12 @@ const VARIANTS = {
   },
   redirect_uri_prefix: {
     // OpenID4VP 1.0: "redirect_uri:" client identifier prefix, DCQL
-    // Unsigned, by value, no client_metadata: the only unsigned form the current
-    // EUDI reference library (eudi-lib-jvm-openid4vp-kt) accepts without pre-registration
-    profile: () => ({ requestMode: 'value', queryLanguage: 'dcql', clientId: `redirect_uri:${RESPONSE_URI}`, clientIdScheme: '', clientMetadata: false }),
-    env: () => ({ REQUEST_MODE: 'value', QUERY_LANGUAGE: 'dcql', CLIENT_ID: `redirect_uri:${RESPONSE_URI}`, CLIENT_METADATA: 'false' })
+    // Unsigned, by value, encrypted response: the only unsigned form the current EUDI
+    // reference library (eudi-lib-jvm-openid4vp-kt) accepts without pre-registration,
+    // plus direct_post.jwt required by HAIP wallets such as SIGMA. client_metadata
+    // then carries only jwks, encryption methods and vp_formats_supported.
+    profile: () => ({ requestMode: 'value', queryLanguage: 'dcql', clientId: `redirect_uri:${RESPONSE_URI}`, clientIdScheme: '', clientMetadata: false, responseMode: 'direct_post.jwt' }),
+    env: () => ({ REQUEST_MODE: 'value', QUERY_LANGUAGE: 'dcql', CLIENT_ID: `redirect_uri:${RESPONSE_URI}`, CLIENT_METADATA: 'false', RESPONSE_MODE: 'direct_post.jwt' })
   }
 };
 
@@ -68,12 +71,17 @@ function createTransaction(rpId, variant = 'configured') {
     clientId: clientIdFor(rpId),
     clientIdScheme: config.CLIENT_ID_SCHEME,
     clientMetadata: config.CLIENT_METADATA,
+    responseMode: config.RESPONSE_MODE,
     ...VARIANTS[variant].profile()
   };
+  const id = crypto.randomUUID();
+  // Per-request response encryption key (never reused across transactions)
+  const encryption = profile.responseMode === 'direct_post.jwt' ? jwe.generateEncryptionKey(crypto.randomBytes(6).toString('base64url')) : null;
   const tx = {
+    encryption,
     variant,
     profile,
-    id: crypto.randomUUID(),
+    id,
     rpId,
     state: crypto.randomBytes(16).toString('base64url'),
     nonce: crypto.randomBytes(16).toString('base64url'),
@@ -141,17 +149,41 @@ function dcqlQuery(rp) {
   };
 }
 
-function clientMetadata() {
+const VP_FORMATS_SUPPORTED = {
+  mso_mdoc: { issuerauth_alg_values: [-7, -35, -36, -8], deviceauth_alg_values: [-7, -35, -36, -8] },
+  'dc+sd-jwt': { 'sd-jwt_alg_values': SIGNING_ALGS, 'kb-jwt_alg_values': SIGNING_ALGS }
+};
+
+// HAIP mandates ES256; used in the compact metadata to keep QR codes scannable
+const VP_FORMATS_SUPPORTED_HAIP = {
+  mso_mdoc: { issuerauth_alg_values: [-7], deviceauth_alg_values: [-7] },
+  'dc+sd-jwt': { 'sd-jwt_alg_values': ['ES256'], 'kb-jwt_alg_values': ['ES256'] }
+};
+
+/**
+ * client_metadata. `full` adds the pre-1.0 vp_formats and a display name; the
+ * response-encryption part (jwks, encrypted_response_enc_values_supported) is
+ * always sent when the response is encrypted, since the wallet needs the key.
+ */
+function clientMetadata(tx) {
   const sdJwt = { 'sd-jwt_alg_values': SIGNING_ALGS, 'kb-jwt_alg_values': SIGNING_ALGS };
-  const mdoc = { alg: SIGNING_ALGS };
-  return {
-    client_name: 'Benin Government eServices',
-    vp_formats: { mso_mdoc: mdoc, 'vc+sd-jwt': sdJwt, 'dc+sd-jwt': sdJwt },
-    vp_formats_supported: {
-      mso_mdoc: { issuerauth_alg_values: [-7, -35, -36, -8], deviceauth_alg_values: [-7, -35, -36, -8] },
-      'dc+sd-jwt': sdJwt
+  const format = RELYING_PARTIES[tx.rpId].format;
+  const full = tx.profile.clientMetadata;
+  const md = { vp_formats_supported: { [format]: (full ? VP_FORMATS_SUPPORTED : VP_FORMATS_SUPPORTED_HAIP)[format] } };
+  if (full) {
+    md.client_name = 'Benin Government eServices';
+    md.vp_formats = { mso_mdoc: { alg: SIGNING_ALGS }, 'vc+sd-jwt': sdJwt, 'dc+sd-jwt': sdJwt };
+  }
+  if (tx.encryption) {
+    md.jwks = { keys: [tx.encryption.jwk] };
+    md.encrypted_response_enc_values_supported = full ? jwe.SUPPORTED_ENC : ['A128GCM'];
+    if (full) {
+      // pre-1.0 drafts
+      md.authorization_encrypted_response_alg = 'ECDH-ES';
+      md.authorization_encrypted_response_enc = 'A128GCM';
     }
-  };
+  }
+  return md;
 }
 
 /** OpenID4VP authorization request parameters (response_mode=direct_post). */
@@ -160,12 +192,12 @@ function requestParameters(tx) {
   const params = {
     response_type: 'vp_token',
     client_id: tx.clientId,
-    response_mode: 'direct_post',
+    response_mode: tx.profile.responseMode,
     response_uri: tx.responseUri,
     nonce: tx.nonce,
     state: tx.state
   };
-  if (tx.profile.clientMetadata) params.client_metadata = clientMetadata();
+  if (tx.profile.clientMetadata || tx.encryption) params.client_metadata = clientMetadata(tx);
   if (tx.profile.clientIdScheme) params.client_id_scheme = tx.profile.clientIdScheme;
   if (tx.profile.queryLanguage === 'dcql') params.dcql_query = dcqlQuery(rp);
   else params.presentation_definition = presentationDefinition(rp);
@@ -177,6 +209,16 @@ function requestObject(tx) {
   const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'oauth-authz-req+jwt' })).toString('base64url');
   const payload = Buffer.from(JSON.stringify({ ...requestParameters(tx), aud: 'https://self-issued.me/v2', iat: Math.floor(Date.now() / 1000) })).toString('base64url');
   return `${header}.${payload}.`;
+}
+
+/**
+ * Query-string encoding that leaves RFC 3986 query-safe characters
+ * (":" "/" "," "@") readable. JSON braces and quotes stay percent-encoded
+ * (java.net.URI rejects them), and "&" "=" "+" "#" are always encoded.
+ */
+function encodeQuery(query) {
+  const enc = (v) => encodeURIComponent(v).replace(/%3A/g, ':').replace(/%2F/g, '/').replace(/%2C/g, ',').replace(/%40/g, '@');
+  return Object.entries(query).map(([k, v]) => `${enc(k)}=${enc(v)}`).join('&');
 }
 
 /** Builds the wallet deep link (also rendered as the QR code). */
@@ -191,7 +233,7 @@ function authorizationRequest(tx) {
     const params = requestParameters(tx);
     query = Object.fromEntries(Object.entries(params).map(([k, v]) => [k, typeof v === 'string' ? v : JSON.stringify(v)]));
   }
-  return { uri: `${scheme}?${new URLSearchParams(query).toString()}` };
+  return { uri: `${scheme}?${encodeQuery(query)}` };
 }
 
 /** Flattens the vp_token of any OpenID4VP version into a list of presentations. */
@@ -213,7 +255,7 @@ function extractPresentations(vpToken) {
   return [];
 }
 
-async function verifyPresentation(presentation, tx) {
+async function verifyPresentation(presentation, tx, jweHeader) {
   const rp = RELYING_PARTIES[tx.rpId];
   if (presentation.includes('~')) {
     return [
@@ -229,7 +271,11 @@ async function verifyPresentation(presentation, tx) {
     namespace: rp.namespace,
     clientId: tx.clientId,
     nonce: tx.nonce,
-    responseUri: tx.responseUri
+    responseUri: tx.responseUri,
+    // encrypted responses bind the SessionTranscript to the verifier's encryption key,
+    // and ISO 18013-7 wallets carry their mdocGeneratedNonce in the JWE "apu"
+    jwkThumbprint: tx.encryption ? jwe.thumbprint(tx.encryption.jwk) : null,
+    mdocGeneratedNonce: jweHeader && jweHeader.apu ? Buffer.from(jweHeader.apu, 'base64url').toString('utf8') : null
   });
 }
 
@@ -255,12 +301,42 @@ function evaluate(result, rp) {
  * Handles the wallet's direct_post to response_uri. Returns
  * { status, body } to send back to the wallet.
  */
-async function handleWalletResponse(body) {
+async function handleWalletResponse(rawBody) {
+  let body = rawBody;
+  let jweHeader = null;
+  if (typeof rawBody.response === 'string') {
+    // direct_post.jwt: the wallet posts response=<JWE>; the kid names our per-request key
+    let header;
+    try {
+      header = jwe.parseHeader(rawBody.response);
+    } catch (err) {
+      return { status: 400, body: { error: 'invalid_request', error_description: `malformed response JWE: ${err.message}` } };
+    }
+    const keyTx = transactions.get(header.kid) || [...transactions.values()].find((t) => t.encryption && t.encryption.jwk.kid === header.kid);
+    if (!keyTx || !keyTx.encryption) {
+      return { status: 400, body: { error: 'invalid_request', error_description: 'unknown encryption key' } };
+    }
+    try {
+      const decrypted = jwe.decrypt(rawBody.response, keyTx.encryption.privateKey);
+      body = JSON.parse(decrypted.payload.toString('utf8'));
+      jweHeader = decrypted.header;
+    } catch (err) {
+      return { status: 400, body: { error: 'invalid_request', error_description: `cannot decrypt response: ${err.message}` } };
+    }
+    if (body.state !== keyTx.state) {
+      return { status: 400, body: { error: 'invalid_request', error_description: 'state does not match the encryption key' } };
+    }
+  }
   const tx = [...transactions.values()].find((t) => t.state === body.state);
   if (!tx || tx.status !== 'pending') {
     return { status: 400, body: { error: 'invalid_request', error_description: 'unknown, expired or already used state' } };
   }
   tx.walletStep = 'response_received';
+  if (tx.encryption && !jweHeader) {
+    tx.status = 'rejected';
+    tx.reasons = ['unencrypted_response'];
+    return { status: 400, body: { error: 'invalid_request', error_description: 'response must be encrypted (direct_post.jwt)' } };
+  }
   if (body.error) {
     tx.status = 'rejected';
     tx.reasons = [`wallet_error:${body.error}`];
@@ -274,7 +350,7 @@ async function handleWalletResponse(body) {
 
   const rp = RELYING_PARTIES[tx.rpId];
   const presentations = extractPresentations(body.vp_token);
-  const results = (await Promise.all(presentations.map((p) => verifyPresentation(p, tx)))).flat();
+  const results = (await Promise.all(presentations.map((p) => verifyPresentation(p, tx, jweHeader)))).flat();
   const evaluated = results.map((r) => ({ result: r, reasons: evaluate(r, rp) }));
   const accepted = evaluated.find((e) => e.reasons.length === 0);
 
@@ -306,9 +382,23 @@ function summary(state) {
   };
 }
 
+/** Log summary for a raw wallet POST (plain or encrypted). */
+function summaryFor(rawBody) {
+  if (typeof rawBody.response === 'string') {
+    try {
+      const tx = transactions.get(jwe.parseHeader(rawBody.response).kid);
+      return summary(tx && tx.state);
+    } catch (_) {
+      return { status: 'malformed_jwe' };
+    }
+  }
+  return summary(rawBody.state);
+}
+
 module.exports = {
   VARIANTS,
   summary,
+  summaryFor,
   createTransaction,
   getTransaction,
   authorizationRequest,

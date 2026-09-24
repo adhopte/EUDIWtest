@@ -145,11 +145,7 @@ app.post('/api/tx/:id/simulate', async (req, res, next) => {
   const tx = txForBrowser(req);
   if (!tx) return res.status(404).json({ status: 'expired' });
   try {
-    const rp = RELYING_PARTIES[tx.rpId];
-    const args = { requested: rp.claims, clientId: tx.clientId, nonce: tx.nonce, responseUri: tx.responseUri };
-    const presentation = rp.format === 'mso_mdoc' ? demoWallet.presentPidMdoc(args) : demoWallet.presentBirthCertificateSdJwt(args);
-    const vpToken = tx.profile.queryLanguage === 'dcql' ? JSON.stringify({ [rp.credential]: [presentation] }) : presentation;
-    await oid4vp.handleWalletResponse({ state: tx.state, vp_token: vpToken });
+    await oid4vp.handleWalletResponse(demoWallet.respond(tx, RELYING_PARTIES[tx.rpId]));
     res.json({ status: tx.status, reasons: tx.reasons || [] });
   } catch (err) {
     next(err);
@@ -177,7 +173,7 @@ app.all('/oid4vp/request/:id', (req, res) => {
 app.post('/oid4vp/response', async (req, res, next) => {
   try {
     const { status, body } = await oid4vp.handleWalletResponse(req.body || {});
-    console.log(`[wallet] response keys=${Object.keys(req.body || {}).join(',') || 'none'} -> ${status} ${JSON.stringify(body.error ? body : oid4vp.summary(req.body && req.body.state))}`);
+    console.log(`[wallet] response keys=${Object.keys(req.body || {}).join(',') || 'none'} -> ${status} ${JSON.stringify(body.error ? body : oid4vp.summaryFor(req.body || {}))}`);
     res.status(status).json(body);
   } catch (err) {
     next(err);
@@ -260,7 +256,7 @@ async function start() {
   }
   return app.listen(config.PORT, () => {
     console.log(`Benin Government eServices RP listening on port ${config.PORT}`);
-    console.log(`BASE_URL=${config.BASE_URL}  response_uri=${oid4vp.RESPONSE_URI}  query=${config.QUERY_LANGUAGE}`);
+    console.log(`BASE_URL=${config.BASE_URL}  response_uri=${oid4vp.RESPONSE_URI}  query=${config.QUERY_LANGUAGE}  response_mode=${config.RESPONSE_MODE}`);
   });
 }
 

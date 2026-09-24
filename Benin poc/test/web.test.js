@@ -67,7 +67,9 @@ test('the QR code uses request_uri and the wallet can fetch the request object',
   const res = await fetch(localUri);
   assert.match(res.headers.get('content-type'), /oauth-authz-req\+jwt/);
   const payload = JSON.parse(Buffer.from((await res.text()).split('.')[1], 'base64url'));
-  assert.equal(payload.response_mode, 'direct_post');
+  assert.equal(payload.response_mode, 'direct_post.jwt');
+  assert.equal(payload.client_metadata.jwks.keys[0].alg, 'ECDH-ES');
+  assert.ok(payload.client_metadata.vp_formats_supported.mso_mdoc);
   assert.equal(payload.dcql_query.credentials[0].meta.doctype_value, 'eu.europa.ec.eudi.pid.1');
   const status = await (await fetch(`${base}/api/tx/${tx.id}`, { headers: { cookie } })).json();
   assert.equal(status.walletStep, 'request_fetched');

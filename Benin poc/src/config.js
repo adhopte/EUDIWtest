@@ -37,6 +37,11 @@ module.exports = {
   //                ~2,500 character, version 35+ QR code most cameras can't read
   REQUEST_MODE: (process.env.REQUEST_MODE || 'reference').toLowerCase(),
 
+  // 'direct_post.jwt' -> the wallet encrypts its response (JWE, ECDH-ES + AES-GCM)
+  //                     to a per-request key; required by HAIP wallets (e.g. SIGMA)
+  // 'direct_post'     -> plain form POST (older drafts / test wallets)
+  RESPONSE_MODE: (process.env.RESPONSE_MODE || 'direct_post.jwt').toLowerCase(),
+
   // Send client_metadata (vp_formats) in the request. Some older wallets
   // reject unknown metadata; set to false to leave it out.
   CLIENT_METADATA: bool(process.env.CLIENT_METADATA, true),

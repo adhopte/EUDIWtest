@@ -77,7 +77,14 @@ REQUEST_MODE=value
 QUERY_LANGUAGE=dcql
 CLIENT_ID=redirect_uri:https://<your-app>.onrender.com/oid4vp/response
 CLIENT_METADATA=false
+RESPONSE_MODE=direct_post.jwt
 ```
+
+SIGMA applies the HAIP profile, so responses must be encrypted
+(`direct_post.jwt`). Each transaction gets its own P-256 key, published in
+`client_metadata.jwks`; the wallet encrypts `{vp_token, state}` to it (JWE,
+`ECDH-ES` + `A128GCM`), and the mdoc SessionTranscript is bound to that key's
+JWK thumbprint.
 
 **Wallet test page:** open `/bedc/wallet-test` or `/fda/wallet-test` (linked from
 each login page). It shows the same request five ways: current settings, all
@@ -152,8 +159,7 @@ test/                     node:test suites
 
 ## Not in scope for the PoC
 
-- Encrypted responses (`direct_post.jwt`) and signed request objects
-  (`x509_san_dns` / `verifier_attestation`)
+- Signed request objects (`x509_san_dns` / `x509_hash` / `verifier_attestation`)
 - Checking Token Status Lists
 - Persistent storage for sessions and transactions (they are in memory; use
   Redis or a database for more than one instance)

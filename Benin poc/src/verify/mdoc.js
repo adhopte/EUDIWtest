@@ -97,10 +97,12 @@ function coseKeyToJwk(coseKey) {
  *  - OpenID4VP 1.0 Appendix B.2.6.1 (OpenID4VPHandover)
  *  - ISO/IEC 18013-7 Annex B (OID4VPHandover), when an mdocGeneratedNonce is known
  */
-function sessionTranscripts({ clientId, nonce, responseUri, mdocGeneratedNonce }) {
+function sessionTranscripts({ clientId, nonce, responseUri, mdocGeneratedNonce, jwkThumbprint }) {
   const out = [];
-  const info = encode([clientId, nonce, null, responseUri]);
-  out.push({ name: 'OpenID4VP-1.0', value: [null, null, ['OpenID4VPHandover', sha('sha-256', info)]] });
+  const handover = (thumb) => [null, null, ['OpenID4VPHandover', sha('sha-256', encode([clientId, nonce, thumb, responseUri]))]];
+  // With an encrypted response the handover carries the verifier key's JWK thumbprint
+  if (jwkThumbprint) out.push({ name: 'OpenID4VP-1.0 (encrypted)', value: handover(Buffer.from(jwkThumbprint)) });
+  out.push({ name: 'OpenID4VP-1.0', value: handover(null) });
   if (mdocGeneratedNonce) {
     const clientIdHash = sha('sha-256', encode([clientId, mdocGeneratedNonce]));
     const responseUriHash = sha('sha-256', encode([responseUri, mdocGeneratedNonce]));
@@ -113,7 +115,7 @@ function sessionTranscripts({ clientId, nonce, responseUri, mdocGeneratedNonce }
  * Verifies a base64url-encoded ISO/IEC 18013-5 DeviceResponse.
  *
  * @param {string} token
- * @param {{ docType: string, clientId: string, nonce: string, responseUri: string, mdocGeneratedNonce?: string }} expected
+ * @param {{ docType: string, clientId: string, nonce: string, responseUri: string, mdocGeneratedNonce?: string, jwkThumbprint?: Buffer }} expected
  * @returns {Promise<object[]>} one result per document
  */
 async function verifyDeviceResponse(token, expected) {
