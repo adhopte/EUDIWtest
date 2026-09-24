@@ -146,7 +146,7 @@
   "wt.variant.legacy": "Everything in the QR code (like the original test RP)",
   "wt.variant.dcql": "OpenID4VP 1.0 (DCQL), request by reference",
   "wt.variant.redirect_uri": "Pre-1.0: client_id_scheme = redirect_uri",
-  "wt.variant.redirect_uri_prefix": "OpenID4VP 1.0: redirect_uri: client prefix",
+  "wt.variant.redirect_uri_prefix": "OpenID4VP 1.0: redirect_uri: client prefix (EUDI library / SIGMA)",
   "wt.step.waiting": "Not scanned yet",
   "wt.step.request_fetched": "Wallet fetched the request — waiting for its answer",
   "wt.step.response_received": "Wallet answered",

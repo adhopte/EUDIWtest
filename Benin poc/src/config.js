@@ -26,9 +26,10 @@ module.exports = {
   BEDC_CLIENT_ID: process.env.BEDC_CLIENT_ID || CLIENT_ID,
   FDA_CLIENT_ID: process.env.FDA_CLIENT_ID || CLIENT_ID,
 
-  // 'pex'  -> presentation_definition (OpenID4VP draft 18-23, most deployed wallets)
-  // 'dcql' -> dcql_query (OpenID4VP 1.0)
-  QUERY_LANGUAGE: (process.env.QUERY_LANGUAGE || 'pex').toLowerCase(),
+  // 'dcql' -> dcql_query (OpenID4VP 1.0, default; the only language the current
+  //           EUDI reference wallet library accepts)
+  // 'pex'  -> presentation_definition (OpenID4VP drafts 18-23)
+  QUERY_LANGUAGE: (process.env.QUERY_LANGUAGE || 'dcql').toLowerCase(),
 
   // 'reference' -> short QR code with request_uri; the wallet fetches an
   //                unsigned request object (alg "none") from this server (default)

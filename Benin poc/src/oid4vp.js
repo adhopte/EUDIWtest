@@ -51,8 +51,10 @@ const VARIANTS = {
   },
   redirect_uri_prefix: {
     // OpenID4VP 1.0: "redirect_uri:" client identifier prefix, DCQL
-    profile: () => ({ requestMode: 'value', queryLanguage: 'dcql', clientId: `redirect_uri:${RESPONSE_URI}`, clientIdScheme: '' }),
-    env: () => ({ REQUEST_MODE: 'value', QUERY_LANGUAGE: 'dcql', CLIENT_ID: `redirect_uri:${RESPONSE_URI}` })
+    // Unsigned, by value, no client_metadata: the only unsigned form the current
+    // EUDI reference library (eudi-lib-jvm-openid4vp-kt) accepts without pre-registration
+    profile: () => ({ requestMode: 'value', queryLanguage: 'dcql', clientId: `redirect_uri:${RESPONSE_URI}`, clientIdScheme: '', clientMetadata: false }),
+    env: () => ({ REQUEST_MODE: 'value', QUERY_LANGUAGE: 'dcql', CLIENT_ID: `redirect_uri:${RESPONSE_URI}`, CLIENT_METADATA: 'false' })
   }
 };
 

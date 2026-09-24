@@ -54,8 +54,8 @@ BASE_URL=https://<your-url> npm start
 
 To match what your wallet supports, set these in `.env`:
 
-- `QUERY_LANGUAGE=pex` (presentation_definition, OpenID4VP drafts) or `dcql`
-  (OpenID4VP 1.0 `dcql_query`).
+- `QUERY_LANGUAGE=dcql` (default, OpenID4VP 1.0 `dcql_query`) or `pex`
+  (presentation_definition, older drafts).
 - `REQUEST_MODE=reference` (default) gives a short QR code that uses `request_uri`.
   `value` puts the whole request in a very dense QR code.
 - `CLIENT_ID` / `CLIENT_ID_SCHEME` to match your registered verifier identifier.
@@ -65,6 +65,19 @@ To match what your wallet supports, set these in `.env`:
 - Set `DEMO_MODE=false` to hide the simulator.
 
 ## Troubleshooting a real wallet
+
+**SIGMA (IN Groupe) and other wallets built on `eudi-lib-jvm-openid4vp-kt`**
+accept only DCQL, only *signed* request objects for `request_uri`, and unsigned
+requests only with a `redirect_uri:` client_id (or a client_id pre-registered in
+the wallet). Without a verifier certificate the wallet trusts, use test variant 5,
+or set:
+
+```
+REQUEST_MODE=value
+QUERY_LANGUAGE=dcql
+CLIENT_ID=redirect_uri:https://<your-app>.onrender.com/oid4vp/response
+CLIENT_METADATA=false
+```
 
 **Wallet test page:** open `/bedc/wallet-test` or `/fda/wallet-test` (linked from
 each login page). It shows the same request five ways: current settings, all

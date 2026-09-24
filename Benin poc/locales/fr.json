@@ -146,7 +146,7 @@
   "wt.variant.legacy": "Tout dans le code QR (comme le RP de test d'origine)",
   "wt.variant.dcql": "OpenID4VP 1.0 (DCQL), demande par référence",
   "wt.variant.redirect_uri": "Avant 1.0 : client_id_scheme = redirect_uri",
-  "wt.variant.redirect_uri_prefix": "OpenID4VP 1.0 : préfixe client redirect_uri:",
+  "wt.variant.redirect_uri_prefix": "OpenID4VP 1.0 : préfixe client redirect_uri: (bibliothèque EUDI / SIGMA)",
   "wt.step.waiting": "Pas encore scanné",
   "wt.step.request_fetched": "Le portefeuille a récupéré la demande — en attente de sa réponse",
   "wt.step.response_received": "Le portefeuille a répondu",
