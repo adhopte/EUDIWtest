@@ -74,6 +74,11 @@ module.exports = {
   // credentials signed by an ephemeral demo issuer. Never enable in production.
   DEMO_MODE: bool(process.env.DEMO_MODE, true),
 
+  // Birth certificate format asked for in the compact by-value QR request, where only
+  // one format fits: 'mso_mdoc' (SIGMA holds it as mdoc, no vct) or 'dc+sd-jwt'.
+  // Other request modes ask for both formats.
+  BIRTH_CERT_COMPACT_FORMAT: process.env.BIRTH_CERT_COMPACT_FORMAT || 'mso_mdoc',
+
   // Accepted SD-JWT VC types for the birth certificate attestation.
   BIRTH_CERT_VCTS: list(process.env.BIRTH_CERT_VCTS, [
     'https://credentials.benin.example/birth_certificate',

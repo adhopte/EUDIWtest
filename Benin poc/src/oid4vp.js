@@ -150,8 +150,8 @@ function dcqlQuery(rp, { compact = false } = {}) {
   // Compact (by-value QR) requests with alternative formats only ask for the
   // required claims, without claim_sets, so the QR code stays scannable.
   const minimal = compact && Boolean(rp.alternative);
-  const claims = minimal ? rp.required : rp.claims;
-  const useSets = rp.claimSets && !minimal;
+  const claims = minimal ? rp.compactClaims || rp.required : rp.claims;
+  const useSets = rp.claimSets && claims.length > rp.required.length;
   const credentialQuery = (q) => {
     const isMdoc = q.format === 'mso_mdoc';
     return {
@@ -169,6 +169,11 @@ function dcqlQuery(rp, { compact = false } = {}) {
       ...(useSets && { claim_sets: [claims.map((c, i) => claimId(i)), rp.required.map((c) => claimId(claims.indexOf(c)))] })
     };
   };
+  if (minimal) {
+    // Only one format fits in a scannable QR code
+    const pick = rp.alternative.format === config.BIRTH_CERT_COMPACT_FORMAT ? rp.alternative : rp;
+    return { credentials: [credentialQuery({ ...rp, ...pick })] };
+  }
   const query = { credentials: [credentialQuery(rp)] };
   if (rp.alternative) {
     query.credentials.push(credentialQuery({ ...rp.alternative }));

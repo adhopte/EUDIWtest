@@ -87,8 +87,10 @@ the issuer's metadata and set `BIRTH_CERT_VCTS` to it. The request uses DCQL
 `claim_sets`, so a certificate with only the required claims (names, birth date,
 `birth_record_reference`) still matches. The FDA request accepts the birth
 certificate either as SD-JWT VC or as mdoc (`eu.europa.ec.eudi.birth_certificate.1`,
-rulebook: "mdoc optional"), via DCQL `credential_sets`; in the compact by-value
-form it asks only for the required claims so the QR code stays scannable.
+rulebook: "mdoc optional"), via DCQL `credential_sets`. The compact by-value QR
+request has room for one format only: `BIRTH_CERT_COMPACT_FORMAT` (default
+`mso_mdoc`, which is how SIGMA holds it). Only names and birth date are mandatory
+for matching; `birth_record_reference` is shared when the credential has it.
 
 SIGMA applies the HAIP profile, so responses must be encrypted
 (`direct_post.jwt`). Each transaction gets its own P-256 key, published in

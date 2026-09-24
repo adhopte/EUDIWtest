@@ -69,7 +69,12 @@ const RELYING_PARTIES = {
       'issuing_authority',
       'issuance_date'
     ],
-    required: ['family_name', 'given_name', 'birth_date', 'birth_record_reference'],
+    // Minimum for login. birth_record_reference is mandatory in the rulebook, but the
+    // wallet's credential may not carry it yet (SIGMA PoC); it is requested and shown
+    // when present, via DCQL claim_sets.
+    required: ['family_name', 'given_name', 'birth_date'],
+    // Claims asked for in the compact (by-value QR) request
+    compactClaims: ['family_name', 'given_name', 'birth_date', 'birth_record_reference'],
     // The rulebook marks most birth certificate claims optional, so let the
     // wallet match a credential that only has the required ones (DCQL claim_sets)
     claimSets: true,
