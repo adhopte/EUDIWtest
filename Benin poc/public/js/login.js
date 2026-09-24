@@ -66,10 +66,23 @@
     img.alt = 'QR code';
     qr.innerHTML = '';
     qr.appendChild(img);
+    qr.classList.toggle('dense', tx.uri.length > 600);
     sameDevice.href = tx.uri;
     document.getElementById('wallet-uri').value = tx.uri;
     timer = setInterval(poll, 2000);
   }
+
+  // Tap a QR code to show it full screen (dense by-value requests scan far better large)
+  document.addEventListener('click', function (e) {
+    const img = e.target.closest('.qr img, .wt-qr img');
+    const open = document.querySelector('.qr-zoom');
+    if (open) { open.remove(); return; }
+    if (!img) return;
+    const overlay = document.createElement('div');
+    overlay.className = 'qr-zoom';
+    overlay.innerHTML = '<img alt="QR code" src="' + img.src + '">';
+    document.body.appendChild(overlay);
+  });
 
   retry.addEventListener('click', start);
   document.getElementById('copy-uri').addEventListener('click', function (e) {

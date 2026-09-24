@@ -20,8 +20,14 @@ setInterval(() => {
   }
 }, 60 * 1000).unref();
 
+if (config.CLIENT_ID.startsWith('redirect_uri:') && config.CLIENT_ID.toLowerCase() !== `redirect_uri:${RESPONSE_URI}`.toLowerCase()) {
+  console.warn(`WARNING: CLIENT_ID ${config.CLIENT_ID} must be exactly redirect_uri:${RESPONSE_URI}`);
+}
+
 function clientIdFor(rpId) {
-  return rpId === 'bedc' ? config.BEDC_CLIENT_ID : config.FDA_CLIENT_ID;
+  const id = rpId === 'bedc' ? config.BEDC_CLIENT_ID : config.FDA_CLIENT_ID;
+  // redirect_uri: client IDs must equal response_uri; fix host capitalisation differences
+  return id.toLowerCase() === `redirect_uri:${RESPONSE_URI}`.toLowerCase() ? `redirect_uri:${RESPONSE_URI}` : id;
 }
 
 /**
@@ -133,7 +139,11 @@ function presentationDefinition(rp) {
   };
 }
 
-function dcqlQuery(rp) {
+/**
+ * DCQL query. `compact` leaves out intent_to_retain (optional in DCQL) to keep
+ * by-value QR codes small enough for phone cameras.
+ */
+function dcqlQuery(rp, { compact = false } = {}) {
   const isMdoc = rp.format === 'mso_mdoc';
   return {
     credentials: [
@@ -142,7 +152,7 @@ function dcqlQuery(rp) {
         format: rp.format,
         meta: isMdoc ? { doctype_value: rp.docType } : { vct_values: rp.vcts },
         claims: rp.claims.map((c) =>
-          isMdoc ? { path: [rp.namespace, c], intent_to_retain: false } : { path: [c] }
+          isMdoc && !compact ? { path: [rp.namespace, c], intent_to_retain: false } : { path: isMdoc ? [rp.namespace, c] : [c] }
         )
       }
     ]
@@ -199,7 +209,7 @@ function requestParameters(tx) {
   };
   if (tx.profile.clientMetadata || tx.encryption) params.client_metadata = clientMetadata(tx);
   if (tx.profile.clientIdScheme) params.client_id_scheme = tx.profile.clientIdScheme;
-  if (tx.profile.queryLanguage === 'dcql') params.dcql_query = dcqlQuery(rp);
+  if (tx.profile.queryLanguage === 'dcql') params.dcql_query = dcqlQuery(rp, { compact: tx.profile.requestMode === 'value' && !tx.profile.clientMetadata });
   else params.presentation_definition = presentationDefinition(rp);
   return params;
 }

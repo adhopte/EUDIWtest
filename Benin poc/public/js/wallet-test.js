@@ -6,6 +6,18 @@
   const rp = root.dataset.rp;
   const step = (name) => root.dataset['step' + name.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join('')];
 
+  // Tap a QR code to show it full screen (dense by-value requests scan far better large)
+  document.addEventListener('click', function (e) {
+    const img = e.target.closest('.qr img, .wt-qr img');
+    const open = document.querySelector('.qr-zoom');
+    if (open) { open.remove(); return; }
+    if (!img) return;
+    const overlay = document.createElement('div');
+    overlay.className = 'qr-zoom';
+    overlay.innerHTML = '<img alt="QR code" src="' + img.src + '">';
+    document.body.appendChild(overlay);
+  });
+
   root.querySelectorAll('.wt-card').forEach(async function (card) {
     const variant = card.dataset.variant;
     const status = card.querySelector('.wt-status');

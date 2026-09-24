@@ -13,7 +13,13 @@ function list(value, fallback) {
   return value.split(',').map((s) => s.trim()).filter(Boolean);
 }
 
-const BASE_URL = (process.env.BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
+// Hostnames are case-insensitive, but wallets compare client_id and response_uri
+// as strings, so normalise (e.g. "Benin-poc.onrender.com" -> "benin-poc.onrender.com").
+function normaliseBaseUrl(value) {
+  const url = new URL(value || 'http://localhost:3000');
+  return `${url.protocol}//${url.host.toLowerCase()}${url.pathname}`.replace(/\/$/, '');
+}
+const BASE_URL = normaliseBaseUrl(process.env.BASE_URL);
 const CLIENT_ID = process.env.CLIENT_ID || 'benin-eservices-rp.poc';
 
 module.exports = {
