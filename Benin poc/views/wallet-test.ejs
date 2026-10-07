@@ -1,0 +1,34 @@
+<%- include('partials/head', { title: brand.name + ' — ' + t('wt.title'), css: brand.css, icon: brand.icon }) %>
+<body class="rp rp-<%= brand.id %>">
+  <%- include('partials/header-' + brand.id) %>
+
+  <main class="container login-layout">
+    <a class="back-link" href="/<%= brand.id %>/login">← <%= t('login.title') %></a>
+    <h1><%= t('wt.title') %></h1>
+    <p><%= t('wt.intro', { credential: t(brand.credentialKey) }) %></p>
+    <p class="muted small"><%= t('wt.hint') %></p>
+
+    <div class="wt-grid" id="wallet-test" data-rp="<%= brand.id %>"
+      <% ['waiting','request_fetched','response_received','verified','rejected','expired'].forEach(function (s) { %> data-step-<%= s.replace(/_/g, '-') %>="<%= t('wt.step.' + s) %>"<% }) %>
+      data-settings="<%= t('wt.settings') %>" data-settings-none="<%= t('wt.settings_none') %>">
+      <% variants.forEach(function (v, i) { %>
+        <section class="card wt-card" data-variant="<%= v %>">
+          <h2><%= i + 1 %>. <%= t('wt.variant.' + v) %></h2>
+          <div class="wt-qr"><div class="spinner" aria-hidden="true"></div></div>
+          <p class="wt-status" role="status"><%= t('wt.step.waiting') %></p>
+          <ul class="wt-reasons"></ul>
+          <div class="wt-result hidden">
+            <p class="small"></p>
+            <pre class="wt-env"></pre>
+            <a class="btn btn-primary btn-sm wt-continue" href="#"><%= t('wt.continue') %></a>
+          </div>
+          <details class="wallet-link"><summary><%= t('wt.link') %></summary><textarea rows="3" readonly></textarea></details>
+        </section>
+      <% }) %>
+    </div>
+  </main>
+
+  <%- include('partials/footer') %>
+  <script src="/js/wallet-test.js" defer></script>
+</body>
+</html>

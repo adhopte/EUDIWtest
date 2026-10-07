@@ -1,4 +1,40 @@
-# Dummy OpenID4VP Relying Party — Benin ASIN PoC
+# EUDIWtest — Benin EUDI Wallet test projects
+
+## ➜ Main project: Benin Government eServices PoC — [`Benin poc/`](Benin%20poc/)
+
+Bilingual (English / French) Government eServices portal with two relying
+parties that log citizens in with an EUDI wallet over OpenID4VP:
+
+* **BEDC Electricity PLC**: Benin PID as ISO mdoc
+* **FDA Benin / Ministry of Health**: Birth Certificate attestation as SD-JWT VC
+
+It follows the Benin PID / Birth Certificate Rulebook v1.1. It verifies issuer
+signatures, trust chains, data integrity and holder binding, and decrypts HAIP
+encrypted responses. Integration with the SIGMA (IN Groupe) wallet is in
+progress: the PID login reaches the wallet's consent screen, and the birth
+certificate is waiting for the issuer's SD-JWT `vct`.
+
+| | |
+|---|---|
+| Overview, quick start, deployment | [`Benin poc/README.md`](Benin%20poc/README.md) |
+| **Developer Guide (English)** | [`Benin poc/README.md` → Developer Guide](Benin%20poc/README.md#developer-guide-english) |
+| **Guide du développeur (Français)** | [`Benin poc/README.md` → Guide du développeur](Benin%20poc/README.md#guide-du-développeur-français) |
+
+```bash
+cd "Benin poc" && npm install && npm start   # http://localhost:3000
+```
+
+On Render.com, set **Root Directory** to `Benin poc`.
+
+---
+
+## Earlier prototype (repository root)
+
+The files at the root of this repository (`server.js`, `lib/`, `public/`) are
+the earlier minimal test verifier. It is kept for reference and is described
+below; new work happens in `Benin poc/`.
+
+## Dummy OpenID4VP Relying Party — Benin ASIN PoC
 
 A minimal OpenID4VP **verifier** (relying party) for demoing credential
 presentation against SIGMA's PID Issuer / Wallet. It:

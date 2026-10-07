@@ -1,0 +1,30 @@
+<section class="card verified">
+  <h2><%= t('verified.title') %></h2>
+  <dl class="meta">
+    <div><dt><%= t('verified.format') %></dt><dd><code><%= login.format %></code> · <code><%= login.credentialType %></code></dd></div>
+    <% if (login.issuer) { %><div><dt><%= t('verified.issuer') %></dt><dd><%= login.issuer %></dd></div><% } %>
+    <div><dt><%= t('verified.at') %></dt><dd><%= new Date(login.at).toLocaleString(lang === 'fr' ? 'fr-FR' : 'en-GB') %></dd></div>
+  </dl>
+  <div class="verified-grid">
+    <div>
+      <h3><%= t('verified.claims') %></h3>
+      <dl class="claims">
+        <% Object.keys(login.claims).forEach(function (name) { %>
+          <div><dt><%= t('claim.' + name) %></dt><dd><%= formatClaim(name, login.claims[name], t, lang) %></dd></div>
+        <% }) %>
+      </dl>
+    </div>
+    <div>
+      <h3><%= t('verified.checks') %></h3>
+      <ul class="checks">
+        <% ['credentialType','issuerSignature','trustedIssuer','disclosures','validity','holderBinding','status'].forEach(function (name) { var c = login.checks[name]; if (!c) return; %>
+          <li class="<%= c.ok ? 'ok' : 'fail' %>">
+            <span class="dot" aria-hidden="true"><%= c.ok ? '✓' : '!' %></span>
+            <span><%= t('check.' + name) %><% if (c.detail) { %> <small class="muted">(<%= c.detail %>)</small><% } %></span>
+            <span class="sr-only"><%= c.ok ? t('check.ok') : t('check.fail') %></span>
+          </li>
+        <% }) %>
+      </ul>
+    </div>
+  </div>
+</section>

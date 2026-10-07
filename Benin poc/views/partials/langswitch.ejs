@@ -1,0 +1,5 @@
+<nav class="lang-switch" aria-label="<%= t('lang.switch') %>">
+  <% supportedLangs.forEach(function (code) { %>
+    <a href="<%= langUrl(code) %>" hreflang="<%= code %>" lang="<%= code %>" class="<%= code === lang ? 'active' : '' %>" <% if (code === lang) { %>aria-current="true"<% } %>><%= code.toUpperCase() %></a>
+  <% }) %>
+</nav>

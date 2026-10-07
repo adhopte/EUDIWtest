@@ -1,0 +1,52 @@
+/* FDA Benin / Ministère de la Santé brand (palette taken from fdabenin.com: purple #5c1bbb,
+   logo navy #2e3a4b, Benin flag stripe) */
+:root {
+  --primary: #5c1bbb;
+  --primary-dark: #45138f;
+  --on-primary: #ffffff;
+  --accent: #fcd116;
+  --on-accent: #2e3a4b;
+  --navy: #2e3a4b;
+  --bg: #f7f5fb;
+  --font: 'Poppins', 'Inter', sans-serif;
+  --font-heading: 'Montserrat', 'Poppins', sans-serif;
+}
+
+.fda-topbar { background: var(--primary); color: #f3eaff; }
+.fda-topbar .lang-switch { color: #fff; }
+.fda-topbar .lang-switch a.active { background: #fff; color: var(--primary); }
+
+.fda-nav { background: #fff; }
+.fda-nav .brand-logo img { height: 56px; }
+.fda-nav .nav-links { justify-content: flex-end; }
+.fda-nav .nav-links a { color: var(--navy); text-transform: uppercase; font-size: .82rem; letter-spacing: .04em; font-weight: 600; }
+.fda-nav .nav-links a:hover, .fda-nav .nav-links a.active { color: var(--primary); }
+
+.fda-hero {
+  background: linear-gradient(120deg, rgba(92, 27, 187, .96), rgba(69, 19, 143, .92)), radial-gradient(circle at 85% 20%, rgba(255,255,255,.15), transparent 45%);
+  color: #fff;
+  padding: 44px 0;
+}
+.fda-hero .eyebrow { color: #e9ddff; }
+.fda-hero h1 { color: #fff; }
+.fda-hero p { max-width: 720px; opacity: .92; }
+
+.rp-fda .login-card { border-top: 5px solid var(--primary); }
+.rp-fda .card h2 { color: var(--navy); }
+.rp-fda .card h2::after { content: ''; display: block; width: 40px; height: 3px; background: var(--primary); margin-top: 8px; }
+.rp-fda .notice { background: #fdf2f4; border: 1px solid #fecdd3; color: #9f1239; }
+.rp-fda .back-link { color: var(--primary); }
+
+.appointments { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+.appointments li { display: flex; gap: 16px; align-items: center; padding: 12px; border: 1px solid var(--border); border-radius: 12px; }
+.appt-date { flex: none; width: 56px; height: 56px; border-radius: 12px; background: var(--primary); color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.1; }
+.appt-date span { font-size: 1.3rem; font-weight: 700; }
+.appt-date small { text-transform: uppercase; font-size: .7rem; }
+
+.service-links { list-style: none; padding: 0; margin: 0; }
+.service-links a { display: flex; justify-content: space-between; padding: 14px 4px; border-bottom: 1px solid var(--border); text-decoration: none; color: var(--navy); font-weight: 500; }
+.service-links a:hover { color: var(--primary); }
+
+@media (max-width: 800px) {
+  .fda-nav .nav-links { justify-content: flex-start; }
+}

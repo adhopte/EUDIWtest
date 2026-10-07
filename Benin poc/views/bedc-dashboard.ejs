@@ -1,0 +1,63 @@
+<%- include('partials/head', { title: brand.name + ' — ' + t('bedc.nav.account'), css: brand.css, icon: brand.icon }) %>
+<body class="rp rp-bedc">
+  <%- include('partials/header-bedc') %>
+
+  <section class="bedc-hero">
+    <div class="container">
+      <h1><%= t('bedc.welcome', { name: claims.given_name + ' ' + claims.family_name }) %></h1>
+      <p><%= t('bedc.welcome_sub') %></p>
+      <div class="hero-actions">
+        <a href="#" class="btn btn-accent"><%= t('bedc.pay_now') %></a>
+        <a href="#" class="btn btn-outline-light"><%= t('bedc.report_fault') %></a>
+      </div>
+    </div>
+  </section>
+
+  <main class="container dashboard">
+    <div class="notice" role="note">⚡ <%= t('bedc.notice') %></div>
+
+    <div class="stat-grid">
+      <div class="card stat"><span class="stat-label"><%= t('bedc.account_no') %></span><span class="stat-value"><%= data.accountNumber %></span></div>
+      <div class="card stat"><span class="stat-label"><%= t('bedc.meter_no') %></span><span class="stat-value"><%= data.meterNumber %></span><span class="stat-sub"><%= t('bedc.tariff') %>: <%= data.tariffBand %></span></div>
+      <div class="card stat stat-highlight"><span class="stat-label"><%= t('bedc.balance') %></span><span class="stat-value"><%= formatMoney(data.balance, lang) %></span></div>
+      <div class="card stat"><span class="stat-label"><%= t('bedc.last_payment') %></span><span class="stat-value"><%= formatMoney(data.lastPayment.amount, lang) %></span><span class="stat-sub"><%= formatDate(data.lastPayment.date, lang) %></span></div>
+    </div>
+
+    <div class="two-col">
+      <section class="card">
+        <h2><%= t('bedc.usage') %></h2>
+        <div class="bars" role="img" aria-label="<%= t('bedc.usage') %>">
+          <% data.usage.forEach(function (m) { %>
+            <div class="bar-col">
+              <span class="bar-val"><%= m.kwh %></span>
+              <div class="bar" style="height: <%= Math.round(m.kwh / data.maxKwh * 100) %>%"></div>
+              <span class="bar-label"><%= formatDate(m.date, lang, { month: 'short' }) %></span>
+            </div>
+          <% }) %>
+        </div>
+        <p class="muted small"><%= t('bedc.service_address') %>: <%= data.serviceAddress %> · <%= t('bedc.units') %>: <%= data.unitsRemaining %> kWh</p>
+      </section>
+
+      <section class="card">
+        <h2><%= t('bedc.bills') %></h2>
+        <table class="table">
+          <thead><tr><th><%= t('bedc.bill.period') %></th><th><%= t('bedc.bill.amount') %></th><th><%= t('bedc.bill.status') %></th></tr></thead>
+          <tbody>
+            <% data.bills.forEach(function (b) { %>
+              <tr>
+                <td><%= formatDate(b.date, lang, { month: 'long', year: 'numeric' }) %></td>
+                <td><%= formatMoney(b.amount, lang) %></td>
+                <td><span class="pill <%= b.paid ? 'pill-ok' : 'pill-due' %>"><%= t(b.paid ? 'bedc.bill.paid' : 'bedc.bill.due') %></span></td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </section>
+    </div>
+
+    <%- include('partials/verified') %>
+  </main>
+
+  <%- include('partials/footer') %>
+</body>
+</html>
