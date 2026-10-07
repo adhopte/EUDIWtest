@@ -120,7 +120,7 @@ app.post('/api/:rp/transactions', requireRp, async (req, res, next) => {
     const variant = oid4vp.VARIANTS[req.query.variant] ? req.query.variant : 'configured';
     const tx = oid4vp.createTransaction(req.rp.id, variant);
     const { uri } = oid4vp.authorizationRequest(tx);
-    const qr = await QRCode.toDataURL(uri, { margin: 2, width: uri.length > 600 ? 720 : 360, errorCorrectionLevel: 'L' });
+    const qr = await QRCode.toDataURL(uri, { margin: 2, width: uri.length > 600 ? 990 : 630, errorCorrectionLevel: 'L' });
     res.cookie(`tx_${tx.id}`, tx.browserKey, cookieOpts(config.TX_TTL_MS));
     res.json({ id: tx.id, uri, qr, variant, env: oid4vp.VARIANTS[variant].env() });
   } catch (err) {

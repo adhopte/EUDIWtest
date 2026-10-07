@@ -451,7 +451,7 @@ which a phone camera can read:
 * For the FDA, only one birth certificate format is requested
   (`BIRTH_CERT_COMPACT_FORMAT`), with the claims in `compactClaims`.
 
-On screen, dense QR codes are shown at 440 px; tapping one shows it full screen.
+On screen, dense QR codes are shown at 660 px (1.5× larger, which Samsung Galaxy A17/A25 cameras need); tapping one shows it full screen.
 
 **Variants** (`VARIANTS` in `src/oid4vp.js`, used by the wallet test page):
 
@@ -616,7 +616,7 @@ error at a time:
 
 | Wallet error | Cause | What the PoC does now |
 |---|---|---|
-| Nothing happens after scanning | QR code too dense (version 35+), so the camera can't decode it | Compact by-value request (~v27), 440 px display, tap to enlarge |
+| Nothing happens after scanning | QR code too dense (version 35+), so the camera can't decode it | Compact by-value request (~v27), 660 px display (1.5×), tap to enlarge |
 | `MissingClientId` | Unsigned or unsupported request shape | Unsigned requests use the `redirect_uri:<response_uri>` client_id |
 | *(library)* `presentation_definition` ignored | The library supports DCQL only | `QUERY_LANGUAGE=dcql` by default |
 | `HAIP profile requires an encrypted response mode` | `direct_post` was used | `direct_post.jwt` with a per-transaction ECDH-ES key |
@@ -1043,7 +1043,7 @@ version 27 (~1 400 caractères), lisible par l'appareil photo d'un téléphone :
 * pour la FDA, un seul format d'acte de naissance est demandé
   (`BIRTH_CERT_COMPACT_FORMAT`), avec les attributs de `compactClaims`.
 
-À l'écran, les QR denses sont affichés en 440 px ; un toucher les affiche en
+À l'écran, les QR denses sont affichés en 660 px (1,5 fois plus grands, nécessaire pour les Samsung Galaxy A17/A25) ; un toucher les affiche en
 plein écran.
 
 **Variantes** (`VARIANTS` dans `src/oid4vp.js`, utilisées par la page de test
@@ -1215,7 +1215,7 @@ exigences, découvertes une erreur de portefeuille à la fois :
 
 | Erreur du portefeuille | Cause | Ce que fait désormais le PoC |
 |---|---|---|
-| Rien ne se passe après le scan | QR trop dense (version 35+), l'appareil photo ne peut pas le décoder | Demande compacte par valeur (~v27), affichage en 440 px, agrandissement au toucher |
+| Rien ne se passe après le scan | QR trop dense (version 35+), l'appareil photo ne peut pas le décoder | Demande compacte par valeur (~v27), affichage en 660 px (×1,5), agrandissement au toucher |
 | `MissingClientId` | Forme de demande non signée ou non prise en charge | Les demandes non signées utilisent le client_id `redirect_uri:<response_uri>` |
 | *(bibliothèque)* `presentation_definition` ignoré | La bibliothèque ne prend en charge que DCQL | `QUERY_LANGUAGE=dcql` par défaut |
 | `HAIP profile requires an encrypted response mode` | `direct_post` était utilisé | `direct_post.jwt` avec une clé ECDH-ES propre à chaque transaction |
