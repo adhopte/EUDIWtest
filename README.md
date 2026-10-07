@@ -10,7 +10,9 @@ parties that log citizens in with an EUDI wallet over OpenID4VP:
 
 It follows the Benin PID / Birth Certificate Rulebook v1.1. It verifies issuer
 signatures, trust chains, data integrity and holder binding, decrypts HAIP
-encrypted responses, and has been tested against the SIGMA (IN Groupe) wallet.
+encrypted responses. Integration with the SIGMA (IN Groupe) wallet is in
+progress: the PID login reaches the wallet's consent screen, and the birth
+certificate is waiting for the issuer's SD-JWT `vct`.
 
 | | |
 |---|---|
