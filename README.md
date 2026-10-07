@@ -9,7 +9,7 @@ parties that log citizens in with an EUDI wallet over OpenID4VP:
 * **FDA Benin / Ministry of Health**: Birth Certificate attestation as SD-JWT VC
 
 It follows the Benin PID / Birth Certificate Rulebook v1.1. It verifies issuer
-signatures, trust chains, data integrity and holder binding, decrypts HAIP
+signatures, trust chains, data integrity and holder binding, and decrypts HAIP
 encrypted responses. Integration with the SIGMA (IN Groupe) wallet is in
 progress: the PID login reaches the wallet's consent screen, and the birth
 certificate is waiting for the issuer's SD-JWT `vct`.
