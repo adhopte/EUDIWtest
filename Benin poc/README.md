@@ -24,6 +24,8 @@ Certificate Rulebook v1.1 (Standard-Namespace Edition)** — see
 |---|---|---|
 | ![portal](docs/screenshots/portal-en.png) | ![bedc](docs/screenshots/bedc-dash-en.png) | ![fda](docs/screenshots/fda-dash-fr.png) |
 
+**Developer documentation:** [English](docs/DEVELOPER.md) · [Français](docs/DEVELOPER.fr.md)
+
 ## Quick start
 
 ```bash
@@ -31,7 +33,7 @@ cd "Benin poc"
 npm install
 cp .env.example .env
 npm start            # http://localhost:3000
-npm test             # 15 tests: verifiers, tampering, web flow, i18n
+npm test             # 25 tests: verifiers, tampering, encryption, web flow, i18n
 ```
 
 Open http://localhost:3000, pick a service, then either scan the QR code with a
