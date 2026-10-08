@@ -1,0 +1,40 @@
+name: ANIP proximity POS (Android)
+
+on:
+  push:
+    paths:
+      - "benin-proximity-pos/**"
+      - ".github/workflows/android-pos.yml"
+  pull_request:
+    paths:
+      - "benin-proximity-pos/**"
+      - ".github/workflows/android-pos.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: benin-proximity-pos
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Unit tests (verifier + screenshots) and debug APK
+        run: ./gradlew --no-daemon testDebugUnitTest assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anip-proximity-pos-debug-apk
+          path: benin-proximity-pos/app/build/outputs/apk/debug/app-debug.apk
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshots-and-test-reports
+          path: |
+            benin-proximity-pos/app/screenshots/
+            benin-proximity-pos/app/build/reports/tests/

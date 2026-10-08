@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ANIP CIVIC portal palette (civic-portal.onrender.com) -->
+    <color name="anip_brand">#00693E</color>
+    <color name="anip_brand_strong">#004D2D</color>
+    <color name="anip_page">#F4F6F5</color>
+    <color name="launcher_background">#FFFFFF</color>
+</resources>

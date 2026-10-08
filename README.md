@@ -28,6 +28,18 @@ On Render.com, set **Root Directory** to `Benin poc`.
 
 ---
 
+## ➜ Proximity POS: ANIP PID verification + payment (Android) — [`benin-proximity-pos/`](benin-proximity-pos/)
+
+Android point-of-sale verifier with ANIP / CIVIC branding. It reads the Benin
+PID mdoc in person (ISO/IEC 18013-5 over NFC or QR, then BLE), verifies it
+offline (issuer signature, ANIP trust chain, validity, device authentication,
+data integrity) and then takes a modular payment step that is simulated in this
+PoC. It is bilingual EN/FR and includes an offline demo with a simulated ANIP
+issuer. The APK is built by the `android-pos.yml` workflow.
+See [`benin-proximity-pos/README.md`](benin-proximity-pos/README.md) (EN / FR).
+
+---
+
 ## Earlier prototype (repository root)
 
 The files at the root of this repository (`server.js`, `lib/`, `public/`) are

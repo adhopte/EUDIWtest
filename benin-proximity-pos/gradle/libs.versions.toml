@@ -1,0 +1,34 @@
+[versions]
+# Aligned with Multipaz 0.97.0 (same AGP, Kotlin and Compose versions)
+agp = "8.13.1"
+kotlin = "2.2.21"
+multipaz = "0.97.0"
+activity-compose = "1.12.0"
+kotlinx-coroutines = "1.10.2"
+kotlinx-datetime = "0.7.1"
+kotlinx-io = "0.8.2"
+junit = "4.13.2"
+robolectric = "4.17"
+roborazzi = "1.76.0"
+compose-ui-test = "1.9.4"
+
+[libraries]
+multipaz = { module = "org.multipaz:multipaz-android", version.ref = "multipaz" }
+multipaz-compose = { module = "org.multipaz:multipaz-compose-android", version.ref = "multipaz" }
+multipaz-doctypes = { module = "org.multipaz:multipaz-doctypes", version.ref = "multipaz" }
+androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activity-compose" }
+kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "kotlinx-coroutines" }
+kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinx-coroutines" }
+kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "kotlinx-datetime" }
+kotlinx-io-bytestring = { module = "org.jetbrains.kotlinx:kotlinx-io-bytestring", version.ref = "kotlinx-io" }
+junit = { module = "junit:junit", version.ref = "junit" }
+robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
+roborazzi = { module = "io.github.takahirom.roborazzi:roborazzi", version.ref = "roborazzi" }
+roborazzi-compose = { module = "io.github.takahirom.roborazzi:roborazzi-compose", version.ref = "roborazzi" }
+compose-ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4", version.ref = "compose-ui-test" }
+compose-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest", version.ref = "compose-ui-test" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
