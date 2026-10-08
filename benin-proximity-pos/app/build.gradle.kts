@@ -16,11 +16,25 @@ android {
         versionName = "1.0.0-poc"
     }
 
+    // PoC only: one fixed key committed to the repo, so every build (local or CI)
+    // has the same signature and can be installed over the previous one.
+    // A production POS must use a private key kept out of source control.
+    signingConfigs {
+        create("poc") {
+            storeFile = file("poc-signing.jks")
+            storePassword = "anip-pos-poc"
+            keyAlias = "anip-pos-poc"
+            keyPassword = "anip-pos-poc"
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("poc")
+        }
         release {
             isMinifyEnabled = false
-            // PoC: release builds are signed with the debug key so the APK installs directly.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("poc")
         }
     }
 

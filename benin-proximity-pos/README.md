@@ -105,7 +105,20 @@ for persona **KOSSI Jean**. Each presentation goes through the real verifier:
 * **Altered data**: the name is changed after signing, so data integrity fails.
 * **Expired PID**: the validity check fails.
 
-## Build & install
+## Install on a phone
+
+1. On the phone, open **[Releases → pos-latest](https://github.com/adhopte/EUDIWtest/releases/tag/pos-latest)** and tap
+   **`anip-proximity-pos.apk`**. Don't use the Actions *artifact*: it is a
+   `.zip`, and Android can't install a zip.
+2. When Android asks, allow your browser / file manager to **install unknown
+   apps**. If Play Protect warns "unrecognised developer", tap
+   *More details → Install anyway*.
+3. If an earlier build is installed and Android says *App not installed* or
+   *package conflicts*, **uninstall the old version first**. Builds made before
+   the fixed PoC key used a different signature. From now on, every build
+   installs over the previous one.
+
+## Build
 
 Requirements: JDK 17+ (21 recommended), Android SDK 36.
 
@@ -116,9 +129,15 @@ cd benin-proximity-pos
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-CI: `.github/workflows/android-pos.yml` builds the APK and runs the tests on
-each push that touches this folder. The APK and screenshots are uploaded as
+CI: `.github/workflows/android-pos.yml` runs the tests and builds the APK on
+each push that touches this folder. It publishes `anip-proximity-pos.apk` on
+the rolling [`pos-latest`](https://github.com/adhopte/EUDIWtest/releases/tag/pos-latest) pre-release and uploads the screenshots as
 workflow artifacts.
+
+Signing: all builds (debug and release, local and CI) are signed with
+`app/poc-signing.jks`. This **demo key is committed on purpose** so that
+builds always install over each other. A production POS must use a private
+key kept out of source control.
 
 Device: Android 8.0+ (API 26) with **Bluetooth LE**. NFC is optional (QR
 engagement works without it) and the camera is used for QR. The app asks for
@@ -152,7 +171,7 @@ Libraries: [OpenWallet Foundation Multipaz](https://github.com/openwallet-founda
   be confirmed in the field.
 * The production ANIP IACA certificate is not bundled.
 * Payment is simulated, and revocation is not checked (online).
-* The release build is signed with the debug key (PoC only).
+* The APK is signed with a demo key committed to the repository (PoC only).
 
 ---
 
@@ -217,6 +236,18 @@ Trois boutons de simulation (PID authentique, données modifiées, PID expiré)
 utilisent un émetteur ANIP de démonstration (persona KOSSI Jean) et passent par
 le vrai vérificateur.
 
+## Installation sur un téléphone
+
+1. Sur le téléphone, ouvrez **[Releases → pos-latest](https://github.com/adhopte/EUDIWtest/releases/tag/pos-latest)** et touchez
+   **`anip-proximity-pos.apk`**. N'utilisez pas l'*artefact* Actions : c'est
+   un `.zip`, et Android ne peut pas installer un zip.
+2. Autorisez le navigateur à **installer des applications inconnues**. Si
+   Play Protect affiche un avertissement, choisissez *Plus de détails →
+   Installer quand même*.
+3. Si Android affiche *Application non installée* ou *conflit de paquet*,
+   **désinstallez d'abord l'ancienne version** : les anciennes versions
+   avaient une autre signature.
+
 ## Compilation
 
 ```bash
@@ -226,11 +257,13 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
 Il faut Android 8.0+ avec Bluetooth LE ; le NFC est optionnel. Le workflow
-GitHub Actions `android-pos.yml` publie l'APK en artefact.
+GitHub Actions `android-pos.yml` publie l'APK sur la pré-version
+[`pos-latest`](https://github.com/adhopte/EUDIWtest/releases/tag/pos-latest). Toutes les versions sont signées avec la clé de
+démonstration `app/poc-signing.jks`, qui est versionnée volontairement pour le PoC.
 
 ## Limites
 
 Le fonctionnement n'a pas encore été testé sur un appareil avec le
 portefeuille SIGMA (NFC/BLE). L'IACA ANIP de production n'est pas fournie. Le
-paiement est simulé, la révocation n'est pas vérifiée, et la version release
-est signée avec la clé de debug (PoC).
+paiement est simulé, la révocation n'est pas vérifiée, et l'APK est signé
+avec une clé de démonstration publique (PoC).

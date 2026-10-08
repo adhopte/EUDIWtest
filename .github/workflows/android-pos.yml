@@ -11,6 +11,9 @@ on:
       - ".github/workflows/android-pos.yml"
   workflow_dispatch:
 
+permissions:
+  contents: write   # to publish the APK as a downloadable release
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -28,12 +31,14 @@ jobs:
       - name: Show Android SDK
         run: echo "ANDROID_HOME=$ANDROID_HOME" && ls "$ANDROID_HOME"
       - uses: gradle/actions/setup-gradle@v5
-      - name: Unit tests (verifier + screenshots) and debug APK
-        run: ./gradlew --no-daemon --stacktrace testDebugUnitTest assembleDebug
+      - name: Unit tests (verifier + screenshots) and APKs
+        run: ./gradlew --no-daemon --stacktrace testDebugUnitTest assembleDebug assembleRelease
+      - name: Name the installable APK
+        run: cp app/build/outputs/apk/release/app-release.apk anip-proximity-pos.apk
       - uses: actions/upload-artifact@v5
         with:
-          name: anip-proximity-pos-debug-apk
-          path: benin-proximity-pos/app/build/outputs/apk/debug/app-debug.apk
+          name: anip-proximity-pos-apk
+          path: benin-proximity-pos/anip-proximity-pos.apk
       - uses: actions/upload-artifact@v5
         if: always()
         with:
@@ -41,3 +46,14 @@ jobs:
           path: |
             benin-proximity-pos/app/screenshots/
             benin-proximity-pos/app/build/reports/tests/
+      # Artifacts download as .zip, which a phone cannot install. Also publish the
+      # APK itself on a rolling pre-release so it can be opened directly on Android.
+      - name: Publish APK (pre-release "pos-latest")
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete pos-latest --cleanup-tag --yes || true
+          gh release create pos-latest anip-proximity-pos.apk --prerelease \
+            --target "$GITHUB_SHA" --title "ANIP Proximity POS (latest build)" \
+            --notes "Built from ${GITHUB_REF_NAME} @ ${GITHUB_SHA::7}. Open this page on the phone and tap anip-proximity-pos.apk to install (allow installs from your browser). PoC build signed with the repository's demo key."
