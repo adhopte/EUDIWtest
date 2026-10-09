@@ -1,20 +1,24 @@
 'use strict';
 
+/*
+ * End to end: the browser reader module (public/js/mdoc-reader.js) reads the
+ * simulated wallet over the ISO/IEC 18013-5 proximity protocol, then the server
+ * verifies the presentation and runs the payment step.
+ */
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 
-process.env.BASE_URL = 'https://anip-web-pos.example';
 process.env.DEMO_MODE = 'true';
-delete process.env.CLIENT_ID;
 
 const { app } = require('../server');
 const demoWallet = require('../src/demo/wallet');
 const trust = require('../src/verify/trust');
-const jwe = require('../src/verify/jwe');
-const QRCode = require('qrcode');
+const R = require('../public/js/mdoc-reader.js');
 
 let server;
 let base;
+const PID = 'eu.europa.ec.eudi.pid.1';
+const ELEMENTS = { family_name: false, given_name: false, age_over_18: false, document_number: false, issuing_authority: false, issuing_country: false, expiry_date: false };
 
 before(async () => {
   await demoWallet.init();
@@ -26,178 +30,172 @@ after(() => server.close());
 async function call(method, path, body, key) {
   const res = await fetch(base + path, {
     method,
-    headers: { 'content-type': 'application/json', ...(key && { 'x-tx-key': key }) },
+    headers: { 'content-type': 'application/json', ...(key && { 'x-sale-key': key }) },
     body: body === undefined ? undefined : JSON.stringify(body)
   });
   return { status: res.status, body: res.status === 204 ? null : await res.json() };
 }
 
-const newTx = (settings = {}) => call('POST', '/api/transactions', { amount: 15000, ...settings }).then((r) => r.body);
-const simulate = (tx, tamper) => call('POST', `/api/tx/${tx.id}/simulate`, { tamper }, tx.key).then((r) => r.body);
-const statusOf = (view, id) => view.report.checks.find((c) => c.id === id).status;
-
-/** Reads the QR deep link the way a wallet does. */
-function parseRequest(uri) {
-  const params = new URL(uri.replace('openid4vp://', 'https://wallet.invalid/')).searchParams;
-  return Object.fromEntries([...params].map(([k, v]) => [k, /^[[{]/.test(v) ? JSON.parse(v) : v]));
+/** Reads the simulated wallet like the terminal does (HTTPS stands in for BLE). */
+async function readWallet({ tamper = 'NONE', deviceAuth = 'signature', elements = ELEMENTS } = {}) {
+  const wallet = (await call('POST', '/api/demo/wallet', { tamper, deviceAuth })).body;
+  const engagement = R.parseEngagement(wallet.qr);
+  const session = await R.createSession(engagement);
+  const transport = {
+    identOk: null,
+    exchange: async (m) => R.b64urlDecode((await call('POST', `/api/demo/wallet/${wallet.id}/message`, { message: R.b64urlEncode(m) })).body.message),
+    close: async () => {}
+  };
+  return { engagement, read: await R.readPid({ engagement, session, transport, docType: PID, namespace: PID, elements }) };
 }
 
-test('QR request: SIGMA profile (DCQL, redirect_uri client_id, encrypted response) with the minimum PID data', async () => {
-  const tx = await newTx();
-  const req = parseRequest(tx.uri);
-  assert.equal(req.client_id, 'redirect_uri:https://anip-web-pos.example/oid4vp/response');
-  assert.equal(req.response_uri, 'https://anip-web-pos.example/oid4vp/response');
-  assert.equal(req.response_mode, 'direct_post.jwt');
-  assert.equal(req.response_type, 'vp_token');
-  const cred = req.dcql_query.credentials[0];
-  assert.equal(cred.format, 'mso_mdoc');
-  assert.equal(cred.meta.doctype_value, 'eu.europa.ec.eudi.pid.1');
-  assert.deepEqual(cred.claims.map((c) => c.path[1]), ['family_name', 'given_name', 'age_over_18', 'document_number', 'issuing_authority', 'issuing_country', 'expiry_date']);
-  for (const forbidden of ['birth_date', 'resident_address', 'personal_administrative_number', 'portrait']) {
-    assert.ok(!cred.claims.some((c) => c.path[1] === forbidden), `${forbidden} must not be requested`);
-  }
-  assert.deepEqual(cred.claim_sets[1], ['a', 'b']); // fallback: names only
-  assert.equal(req.client_metadata.jwks.keys[0].kty, 'EC');
-  assert.deepEqual(req.client_metadata.vp_formats_supported, { mso_mdoc: { issuerauth_alg_values: [-7], deviceauth_alg_values: [-7] } });
-  assert.ok(tx.qrVersion <= 30, `QR version ${tx.qrVersion} too dense for phone cameras`);
-  assert.equal(tx.qrVersion, QRCode.create(tx.uri, { errorCorrectionLevel: 'L' }).version);
-  assert.match(tx.qr, /^<svg/);
+async function verify(read, pos = {}) {
+  return call('POST', '/api/verify', { ...read, pos: { amount: 15000, ...pos }, session: { transport: 'test' } });
+}
+const statusOf = (sale, id) => sale.report.checks.find((c) => c.id === id).status;
+
+test('the simulated wallet shows a real ISO 18013-5 engagement (BLE peripheral server mode)', async () => {
+  const { engagement } = await readWallet();
+  assert.equal(engagement.version, '1.0');
+  assert.deepEqual(engagement.methods, ['BLE']);
+  assert.equal(engagement.ble.peripheralServer, true);
+  assert.match(engagement.ble.peripheralServerUuid, /^[0-9a-f-]{36}$/);
+  assert.equal(R.bleCompatibility(engagement), null);
 });
 
-test('portrait is requested only when the terminal enables it', async () => {
-  const tx = await newTx({ includePortrait: true });
-  assert.ok(parseRequest(tx.uri).dcql_query.credentials[0].claims.some((c) => c.path[1] === 'portrait'));
+test('genuine PID: every check passes, only the requested elements are disclosed, minimal payment context', async () => {
+  const { read } = await readWallet();
+  const { status, body } = await verify(read);
+  assert.equal(status, 200);
+  const sale = body.sale;
+  assert.equal(sale.status, 'verified');
+  for (const c of sale.report.checks) assert.ok(['PASS', 'NOT_CHECKED'].includes(c.status), `${c.id} ${c.status} ${c.detail}`);
+  assert.match(sale.report.deviceAuth, /DeviceSignature/);
+  assert.deepEqual(Object.keys(sale.report.claims).sort(), Object.keys(ELEMENTS).sort());
+  assert.ok(!('birth_date' in sale.report.claims) && !('personal_administrative_number' in sale.report.claims));
+  assert.deepEqual(sale.paymentRequest.identity, { identityVerified: true, ageOver18: true });
+  assert.ok(!JSON.stringify(sale.paymentRequest).includes('KOSSI'), 'no PID attributes in the payment request');
+  assert.equal(sale.report.issuerTopPem, undefined, 'certificate PEM stays on the server');
 });
 
-test('genuine PID: every check passes, only requested data is disclosed, payment gets minimal context', async () => {
-  const tx = await newTx();
-  const view = await simulate(tx, 'NONE');
-  assert.equal(view.status, 'verified');
-  for (const c of view.report.checks) assert.ok(['PASS', 'NOT_CHECKED'].includes(c.status), `${c.id} ${c.status} ${c.detail}`);
-  assert.equal(statusOf(view, 'REVOCATION'), 'NOT_CHECKED'); // never simulated
-  assert.deepEqual(Object.keys(view.report.claims).sort(), ['age_over_18', 'document_number', 'expiry_date', 'family_name', 'given_name', 'issuing_authority', 'issuing_country']);
-  assert.deepEqual(view.paymentRequest.identity, { identityVerified: true, ageOver18: true });
-  assert.ok(!JSON.stringify(view.paymentRequest).includes('KOSSI'), 'no PID attributes in the payment request');
-  assert.equal(view.report.issuerTopPem, undefined, 'certificate PEM stays on the server');
+test('DeviceMac authentication (EMacKey from the reader key) is verified', async () => {
+  const { read } = await readWallet({ deviceAuth: 'mac' });
+  const sale = (await verify(read)).body.sale;
+  assert.equal(statusOf(sale, 'DEVICE_AUTH'), 'PASS');
+  assert.match(sale.report.deviceAuth, /DeviceMac/);
+  // without the reader's ephemeral key the MAC cannot be checked
+  const { read: read2 } = await readWallet({ deviceAuth: 'mac' });
+  const sale2 = (await verify({ ...read2, readerKey: undefined })).body.sale;
+  assert.equal(statusOf(sale2, 'DEVICE_AUTH'), 'FAIL');
 });
 
-test('altered data fails data integrity', async () => {
-  const view = await simulate(await newTx(), 'ALTERED_NAME');
-  assert.equal(view.status, 'rejected');
-  assert.equal(statusOf(view, 'DATA_INTEGRITY'), 'FAIL');
-  assert.equal(statusOf(view, 'ISSUER_SIGNATURE'), 'PASS');
-  assert.equal(view.paymentRequest, null);
+test('altered data fails data integrity; expired PID fails validity', async () => {
+  const altered = (await verify((await readWallet({ tamper: 'ALTERED_NAME' })).read)).body.sale;
+  assert.equal(altered.status, 'rejected');
+  assert.equal(statusOf(altered, 'DATA_INTEGRITY'), 'FAIL');
+  assert.equal(statusOf(altered, 'ISSUER_SIGNATURE'), 'PASS');
+  assert.equal(altered.paymentRequest, null);
+
+  const expired = (await verify((await readWallet({ tamper: 'EXPIRED' })).read)).body.sale;
+  assert.equal(expired.status, 'rejected');
+  assert.equal(statusOf(expired, 'VALIDITY'), 'FAIL');
 });
 
-test('expired PID fails validity', async () => {
-  const view = await simulate(await newTx(), 'EXPIRED');
-  assert.equal(view.status, 'rejected');
-  assert.equal(statusOf(view, 'VALIDITY'), 'FAIL');
+test('a presentation replayed or moved to another session is refused', async () => {
+  const a = (await readWallet()).read;
+  assert.equal((await verify(a)).status, 200);
+  assert.equal((await verify(a)).status, 409, 'same SessionTranscript twice');
+
+  const b = (await readWallet()).read;
+  const swapped = (await verify({ ...a, sessionTranscript: b.sessionTranscript })).body.sale;
+  assert.equal(statusOf(swapped, 'DEVICE_AUTH'), 'FAIL');
+  assert.equal(swapped.status, 'rejected');
+
+  assert.equal((await call('POST', '/api/verify', { deviceResponse: a.deviceResponse, sessionTranscript: 'oA' })).status, 400);
 });
 
 test('unknown issuer fails when a trusted issuer is required, warns otherwise; "trust this issuer" fixes it', async () => {
   const saved = trust.anchors.splice(0, trust.anchors.length);
   try {
-    let tx = await newTx();
-    let view = await simulate(tx, 'NONE');
-    assert.equal(statusOf(view, 'ISSUER_TRUST'), 'FAIL');
-    assert.equal(view.status, 'rejected');
-    assert.equal(view.report.canTrustIssuer, true);
+    const { body } = await verify((await readWallet()).read);
+    assert.equal(statusOf(body.sale, 'ISSUER_TRUST'), 'FAIL');
+    assert.equal(body.sale.report.canTrustIssuer, true);
 
-    view = await simulate(await newTx({ requireTrustedIssuer: false }), 'NONE');
-    assert.equal(statusOf(view, 'ISSUER_TRUST'), 'WARN');
-    assert.equal(view.status, 'verified');
+    const relaxed = (await verify((await readWallet()).read, { requireTrustedIssuer: false })).body.sale;
+    assert.equal(statusOf(relaxed, 'ISSUER_TRUST'), 'WARN');
+    assert.equal(relaxed.status, 'verified');
 
-    const trusted = await call('POST', `/api/tx/${tx.id}/trust-issuer`, {}, tx.key);
-    assert.equal(trusted.status, 200);
-    tx = await newTx();
-    view = await simulate(tx, 'NONE');
-    assert.equal(statusOf(view, 'ISSUER_TRUST'), 'PASS');
+    assert.equal((await call('POST', `/api/sale/${body.id}/trust-issuer`, {}, body.key)).status, 200);
+    const again = (await verify((await readWallet()).read)).body.sale;
+    assert.equal(statusOf(again, 'ISSUER_TRUST'), 'PASS');
   } finally {
     trust.anchors.splice(0, trust.anchors.length, ...saved);
   }
 });
 
-test('age 18+ requirement is enforced when enabled', async () => {
-  const view = await simulate(await newTx({ requireAgeOver18: true }), 'NONE');
-  assert.equal(statusOf(view, 'AGE_OVER_18'), 'PASS');
-  assert.equal(view.status, 'verified');
+test('age 18+ requirement: enforced when enabled, missing age fails', async () => {
+  const ok = (await verify((await readWallet()).read, { requireAgeOver18: true })).body.sale;
+  assert.equal(statusOf(ok, 'AGE_OVER_18'), 'PASS');
+  const { family_name, given_name } = ELEMENTS;
+  const noAge = (await verify((await readWallet({ elements: { family_name, given_name } })).read, { requireAgeOver18: true })).body.sale;
+  assert.equal(statusOf(noAge, 'AGE_OVER_18'), 'FAIL');
 });
 
-test('wallet response endpoint: encrypted response verifies, replay and plain responses are refused', async () => {
-  const tx = await newTx();
-  const internal = require('../src/oid4vp').getTransaction(tx.id);
-  const body = demoWallet.respond(internal);
-  // a response for another session's key cannot be decrypted / matched
-  const res = await call('POST', '/oid4vp/response', body);
-  assert.equal(res.status, 200);
-  const view = (await call('GET', `/api/tx/${tx.id}`, undefined, tx.key)).body;
-  assert.equal(view.status, 'verified');
-  // re-sent by the same wallet: acknowledged, not processed twice
-  assert.equal((await call('POST', '/oid4vp/response', body)).status, 200);
+test('payment: wrong PIN, then explicit confirmation completes; refused before verification', async () => {
+  const rejected = (await verify((await readWallet({ tamper: 'EXPIRED' })).read)).body;
+  assert.equal((await call('POST', `/api/sale/${rejected.id}/pay`, { pin: '1234' }, rejected.key)).status, 409);
 
-  const tx2 = await newTx();
-  const plain = await call('POST', '/oid4vp/response', { state: require('../src/oid4vp').getTransaction(tx2.id).state, vp_token: '{}' });
-  assert.equal(plain.status, 400);
-  assert.equal((await call('GET', `/api/tx/${tx2.id}`, undefined, tx2.key)).body.report.checks[0].detail, 'unencrypted_response');
-
-  assert.equal((await call('POST', '/oid4vp/response', { state: 'nope', vp_token: 'x' })).status, 400);
+  const { id, key } = (await verify((await readWallet()).read)).body;
+  let sale = (await call('POST', `/api/sale/${id}/pay`, { pin: '0000' }, key)).body;
+  assert.equal(sale.status, 'verified');
+  assert.deepEqual([sale.payment.status, sale.payment.attemptsLeft], ['declined', 2]);
+  sale = (await call('POST', `/api/sale/${id}/pay`, { pin: '1234' }, key)).body;
+  assert.equal(sale.status, 'paid');
+  assert.match(sale.payment.code, /^[A-Z0-9]{6}$/);
 });
 
-test('citizen declines in the wallet: identity not verified, reason shown', async () => {
-  const tx = await newTx();
-  const internal = require('../src/oid4vp').getTransaction(tx.id);
-  const payload = JSON.stringify({ state: internal.state, error: 'access_denied' });
-  const res = await call('POST', '/oid4vp/response', { response: jwe.encrypt(payload, internal.encryption.jwk, { apv: Buffer.from(internal.nonce) }) });
-  assert.equal(res.status, 200);
-  const view = (await call('GET', `/api/tx/${tx.id}`, undefined, tx.key)).body;
-  assert.equal(view.status, 'rejected');
-  assert.equal(view.report.checks[0].detail, 'wallet_error:access_denied');
+test('payment: three wrong PINs or a customer decline end the sale unpaid', async () => {
+  const s1 = (await verify((await readWallet()).read)).body;
+  let sale;
+  for (let i = 0; i < 3; i += 1) sale = (await call('POST', `/api/sale/${s1.id}/pay`, { pin: '9999' }, s1.key)).body;
+  assert.equal(sale.status, 'payment_declined');
+
+  const s2 = (await verify((await readWallet()).read)).body;
+  sale = (await call('POST', `/api/sale/${s2.id}/decline`, {}, s2.key)).body;
+  assert.equal(sale.status, 'payment_declined');
+  assert.equal(sale.payment.reason, 'declined_by_customer');
 });
 
-test('payment: wrong PIN, then explicit confirmation completes; payment refused before verification', async () => {
-  const tx = await newTx();
-  assert.equal((await call('POST', `/api/tx/${tx.id}/pay`, { pin: '1234' }, tx.key)).status, 409);
-  await simulate(tx, 'NONE');
-  let view = (await call('POST', `/api/tx/${tx.id}/pay`, { pin: '0000' }, tx.key)).body;
-  assert.equal(view.status, 'verified');
-  assert.deepEqual([view.payment.status, view.payment.attemptsLeft], ['declined', 2]);
-  view = (await call('POST', `/api/tx/${tx.id}/pay`, { pin: '1234' }, tx.key)).body;
-  assert.equal(view.status, 'paid');
-  assert.equal(view.payment.status, 'authorized');
-  assert.match(view.payment.code, /^[A-Z0-9]{6}$/);
+test('a sale is only visible to the terminal that created it, and can be wiped', async () => {
+  const { id, key } = (await verify((await readWallet()).read)).body;
+  assert.equal((await call('GET', `/api/sale/${id}`)).status, 404);
+  assert.equal((await call('GET', `/api/sale/${id}`, undefined, 'x'.repeat(key.length))).status, 404);
+  assert.equal((await call('DELETE', `/api/sale/${id}`, undefined, key)).status, 204);
+  assert.equal((await call('GET', `/api/sale/${id}`, undefined, key)).status, 404);
 });
 
-test('payment: three wrong PINs or a customer decline end the transaction unpaid', async () => {
-  const tx = await newTx();
-  await simulate(tx, 'NONE');
-  let view;
-  for (let i = 0; i < 3; i += 1) view = (await call('POST', `/api/tx/${tx.id}/pay`, { pin: '9999' }, tx.key)).body;
-  assert.equal(view.status, 'payment_declined');
-
-  const tx2 = await newTx();
-  await simulate(tx2, 'NONE');
-  view = (await call('POST', `/api/tx/${tx2.id}/decline`, {}, tx2.key)).body;
-  assert.equal(view.status, 'payment_declined');
-  assert.equal(view.payment.reason, 'declined_by_customer');
+test('a simulated wallet answers one session only', async () => {
+  const wallet = (await call('POST', '/api/demo/wallet', {})).body;
+  const engagement = R.parseEngagement(wallet.qr);
+  const session = await R.createSession(engagement);
+  const msg = await session.establishment(R.deviceRequest(PID, PID, ELEMENTS));
+  assert.equal((await call('POST', `/api/demo/wallet/${wallet.id}/message`, { message: R.b64urlEncode(msg) })).status, 200);
+  assert.equal((await call('POST', `/api/demo/wallet/${wallet.id}/message`, { message: R.b64urlEncode(msg) })).status, 404);
 });
 
-test('a transaction is only visible to the terminal that created it, and can be wiped', async () => {
-  const tx = await newTx();
-  assert.equal((await call('GET', `/api/tx/${tx.id}`)).status, 404);
-  assert.equal((await call('GET', `/api/tx/${tx.id}`, undefined, 'x'.repeat(tx.key.length))).status, 404);
-  assert.equal((await call('POST', `/api/tx/${tx.id}/simulate`, {})).status, 404);
-  assert.equal((await call('DELETE', `/api/tx/${tx.id}`, undefined, tx.key)).status, 204);
-  assert.equal((await call('GET', `/api/tx/${tx.id}`, undefined, tx.key)).status, 404);
-});
-
-test('terminal UI and config are served', async () => {
+test('terminal UI, reader scripts and config are served with the camera permission', async () => {
   const page = await fetch(`${base}/`);
   assert.equal(page.status, 200);
   assert.match(page.headers.get('content-security-policy'), /script-src 'self'/);
-  assert.match(await page.text(), /ANIP Web POS/);
+  assert.match(page.headers.get('permissions-policy'), /camera=\(self\)/);
+  const html = await page.text();
+  for (const src of ['/js/cbor.js', '/js/mdoc-reader.js', '/vendor/jsQR.js', '/js/app.js']) {
+    assert.ok(html.includes(src), src);
+    assert.equal((await fetch(base + src)).status, 200, src);
+  }
   const cfg = (await call('GET', '/api/config')).body;
-  assert.equal(cfg.demoMode, true);
+  assert.equal(cfg.docType, PID);
   assert.equal(cfg.elements.length, 7);
-  assert.equal((await call('GET', '/health')).body.ok, true);
+  assert.equal(cfg.bleChunkSize, 20);
+  assert.match((await call('GET', '/health')).body.flow, /18013-5/);
 });

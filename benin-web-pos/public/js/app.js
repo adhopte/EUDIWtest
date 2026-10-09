@@ -1,6 +1,7 @@
 /*
- * ANIP web POS — terminal UI. Same journey and screens as the Android
- * proximity POS: home → QR code → identity result → payment → complete.
+ * ANIP web POS — terminal UI and ISO/IEC 18013-5 proximity reader. Same journey
+ * and screens as the Android POS: home → scan the wallet's QR code → Bluetooth
+ * → identity result → payment → complete. The reader logic is in mdoc-reader.js.
  */
 'use strict';
 
@@ -25,6 +26,7 @@
     cloudOff: svg('<path d="M22.6 17.4A3.5 3.5 0 0 0 19 12h-.6A6 6 0 0 0 9.3 8.2"/><path d="M5.2 7.3A5 5 0 0 0 8 19h9"/><line x1="2" y1="2" x2="22" y2="22"/>'),
     backspace: svg('<path d="M21 5H8l-6 7 6 7h13a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1z"/><line x1="17" y1="9" x2="12" y2="14"/><line x1="12" y1="9" x2="17" y2="14"/>'),
     card: svg('<rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/><line x1="6" y1="15" x2="10" y2="15"/>'),
+    bluetooth: svg('<polyline points="6.5 6.5 17.5 17.5 12 23 12 1 17.5 6.5 6.5 17.5"/>'),
     shield: svg('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/>')
   };
   const STATUS_ICON = { PASS: 'checkCircle', FAIL: 'xCircle', WARN: 'warn', NOT_EVALUATED: 'minusCircle', NOT_CHECKED: 'info' };
@@ -36,7 +38,8 @@
     currency: 'XOF',
     requireTrustedIssuer: true,
     requireAgeOver18: false,
-    includePortrait: false
+    includePortrait: false,
+    bleChunkSize: 20
   };
   const store = {
     get(key, fallback) {
@@ -59,8 +62,15 @@
     settings: { ...DEFAULT_SETTINGS, ...store.get('anip-pos-settings', {}) },
     cfg: null,
     screen: 'home',
-    tx: null, // { id, key, uri, qr, qrVersion }
-    view: null, // latest transaction view from the server
+    engagement: null, // parsed wallet QR code
+    compat: null, // why this browser cannot connect (null = it can)
+    session: null, // ISO 18013-5 reader session (keys, SessionTranscript)
+    steps: [], // reader steps done
+    active: null, // reader step in progress
+    transportName: '',
+    sale: null, // { id, key } from the server after verification
+    view: null, // latest sale view from the server
+    scanError: null,
     error: null,
     pin: '',
     payError: null,
@@ -68,7 +78,7 @@
     showDetails: false,
     issuerTrusted: false
   };
-  let pollTimer = null;
+  let camera = null; // { stream, timer }
 
   /* ---------------------------------------------------------- helpers */
   const $ = (sel) => document.querySelector(sel);
@@ -98,7 +108,7 @@
 
   async function api(method, path, body) {
     const headers = { 'content-type': 'application/json' };
-    if (state.tx) headers['x-tx-key'] = state.tx.key;
+    if (state.sale) headers['x-sale-key'] = state.sale.key;
     const res = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined });
     if (res.status === 204) return null;
     const json = await res.json().catch(() => ({}));
@@ -111,91 +121,193 @@
     return json;
   }
 
-  /* ------------------------------------------------------- transaction */
-  function stopPolling() {
-    if (pollTimer) clearTimeout(pollTimer);
-    pollTimer = null;
+  /* ------------------------------------------------- proximity reading */
+  const R = window.MdocReader;
+  const STEPS = ['ENGAGEMENT', 'CONNECTING', 'REQUEST_SENT', 'WAITING_CONSENT', 'RESPONSE_RECEIVED', 'VERIFYING'];
+  const hasBluetooth = () => Boolean(navigator.bluetooth);
+
+  function resetReading() {
+    stopCamera();
+    const sale = state.sale;
+    if (sale) api('DELETE', `/api/sale/${sale.id}`).catch(() => {});
+    Object.assign(state, { engagement: null, compat: null, session: null, steps: [], active: null, transportName: '', sale: null, view: null, scanError: null, pin: '', payError: null, busy: false, showDetails: false, issuerTrusted: false });
   }
 
-  async function forgetTransaction() {
-    stopPolling();
-    const tx = state.tx;
-    if (tx) api('DELETE', `/api/tx/${tx.id}`).catch(() => {});
-    Object.assign(state, { tx: null, view: null, pin: '', payError: null, busy: false, showDetails: false, issuerTrusted: false });
+  function step(name) {
+    const i = STEPS.indexOf(name);
+    state.steps = STEPS.slice(0, i);
+    state.active = name;
+    if (state.screen === 'reading') render();
   }
 
-  async function startTransaction() {
-    await forgetTransaction();
-    const s = state.settings;
-    const created = await api('POST', '/api/transactions', {
-      merchant: s.merchant,
-      amount: s.amount,
-      currency: s.currency,
-      requireTrustedIssuer: s.requireTrustedIssuer,
-      requireAgeOver18: s.requireAgeOver18,
-      includePortrait: s.includePortrait
-    });
-    state.tx = { id: created.id, key: created.key, uri: created.uri, qr: created.qr, qrVersion: created.qrVersion };
-    state.view = created.transaction;
+  /** The PID elements asked for (namespace → intent_to_retain = false). */
+  function requestedElements() {
+    const els = [...state.cfg.elements, ...(state.settings.includePortrait ? [state.cfg.portrait] : [])];
+    return Object.fromEntries(els.map((e) => [e.id, false]));
+  }
+
+  /** Wallet QR code read (camera, paste or demo): parse the DeviceEngagement and prepare the session. */
+  async function onEngagement(text) {
+    stopCamera();
+    try {
+      state.engagement = R.parseEngagement(text);
+    } catch (err) {
+      state.scanError = t(err.message === 'not_mdoc_qr' ? 'scan_not_mdoc' : 'scan_invalid', err.message);
+      return go('scan');
+    }
+    state.compat = !hasBluetooth() ? 'no_web_bluetooth' : R.bleCompatibility(state.engagement);
+    state.session = await R.createSession(state.engagement);
+    state.t0 = Date.now();
+    go('engaged');
+  }
+
+  /**
+   * "Connect to the wallet": Web Bluetooth only opens its device chooser inside a
+   * user gesture, so requestDevice() is called before anything else here.
+   */
+  function connectBle() {
+    const chooser = R.requestWalletDevice(state.engagement);
+    state.transportName = 'BLE · mdoc peripheral server mode (Web Bluetooth)';
+    step('CONNECTING');
     go('reading');
+    chooser
+      .then((device) => R.bleTransport(device, state.engagement, { chunkSize: state.settings.bleChunkSize, onStep: step }))
+      .then((transport) => read(transport))
+      .catch((err) => readFailed(err));
   }
 
-  async function start() {
-    try {
-      await startTransaction();
-      poll();
-    } catch (err) {
-      showError(err);
+  async function read(transport) {
+    const result = await R.readPid({
+      engagement: state.engagement,
+      session: state.session,
+      transport,
+      docType: state.cfg.docType,
+      namespace: state.cfg.namespace,
+      elements: requestedElements(),
+      onStep: step
+    });
+    step('VERIFYING');
+    const s = state.settings;
+    const created = await api('POST', '/api/verify', {
+      ...result,
+      pos: { merchant: s.merchant, amount: s.amount, currency: s.currency, requireTrustedIssuer: s.requireTrustedIssuer, requireAgeOver18: s.requireAgeOver18, includePortrait: s.includePortrait },
+      session: { transport: state.transportName, bleIdent: result.bleIdent, durationMs: Date.now() - state.t0 }
+    });
+    state.sale = { id: created.id, key: created.key };
+    state.view = created.sale;
+    go('result');
+  }
+
+  function readFailed(err) {
+    const name = (err && (err.name === 'NotFoundError' ? 'chooser_cancelled' : err.message)) || 'error';
+    if (name === 'chooser_cancelled') {
+      state.scanError = t('err_chooser_cancelled');
+      return go('engaged');
     }
+    const known = ['no_web_bluetooth', 'timeout_waiting_for_wallet', 'wallet_ended_session', 'ble_disconnected', 'wallet_status_20'];
+    return showError(known.includes(name) ? t(`err_${name}`) : `${t('err_reading')} (${name})`);
   }
 
+  /** Demo without a phone: a simulated wallet on the server; same reader code, HTTPS instead of BLE. */
   async function startDemo(tamper) {
+    resetReading();
     try {
-      await startTransaction();
-      // The QR code is shown briefly, then the simulated wallet answers
-      await new Promise((r) => setTimeout(r, 900));
-      if (!state.tx) return;
-      state.view = await api('POST', `/api/tx/${state.tx.id}/simulate`, { tamper });
-      onView();
+      const wallet = await api('POST', '/api/demo/wallet', { tamper });
+      await onEngagement(wallet.qr);
+      state.transportName = t('transport_demo');
+      step('CONNECTING');
+      go('reading');
+      const transport = {
+        identOk: null,
+        async exchange(message) {
+          step('WAITING_CONSENT');
+          const reply = await api('POST', `/api/demo/wallet/${wallet.id}/message`, { message: R.b64urlEncode(message) });
+          return R.b64urlDecode(reply.message);
+        },
+        async close() {}
+      };
+      await read(transport);
     } catch (err) {
-      showError(err);
+      readFailed(err);
     }
   }
 
-  function poll() {
-    stopPolling();
-    pollTimer = setTimeout(async () => {
-      if (!state.tx || state.screen !== 'reading') return;
+  /* ------------------------------------------------------------- camera */
+  async function startCamera() {
+    if (camera) return attachCamera();
+    if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) {
+      state.scanError = t('err_no_camera');
+      return render();
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+      camera = { stream, timer: null };
+      attachCamera();
+    } catch (err) {
+      state.scanError = t('err_camera', err.name || err.message);
+      render();
+    }
+    return undefined;
+  }
+
+  function attachCamera() {
+    const video = $('#scan-video');
+    if (!camera || !video) return;
+    video.srcObject = camera.stream;
+    video.play().catch(() => {});
+    const detector = 'BarcodeDetector' in window ? new window.BarcodeDetector({ formats: ['qr_code'] }) : null;
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    clearInterval(camera.timer);
+    camera.timer = setInterval(async () => {
+      if (!video.videoWidth) return;
+      let text = null;
       try {
-        state.view = await api('GET', `/api/tx/${state.tx.id}`);
-        onView();
-      } catch (err) {
-        if (err.status === 404) return showError(t('error_expired'));
-        render(); // transient network error: keep waiting
+        if (detector) {
+          const codes = await detector.detect(video);
+          text = codes.length ? codes[0].rawValue : null;
+        } else if (window.jsQR) {
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          ctx.drawImage(video, 0, 0);
+          const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const code = window.jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
+          text = code ? code.data : null;
+        }
+      } catch (_) { /* next frame */ }
+      if (text && /^mdoc:/i.test(text.trim())) onEngagement(text);
+      else if (text) {
+        state.scanError = t('scan_not_mdoc');
+        const n = $('#scan-error');
+        if (n) { n.textContent = state.scanError; n.hidden = false; }
       }
-      if (state.screen === 'reading') poll();
-    }, 1000);
+    }, 250);
+  }
+
+  function stopCamera() {
+    if (!camera) return;
+    clearInterval(camera.timer);
+    camera.stream.getTracks().forEach((tr) => tr.stop());
+    camera = null;
+  }
+
+  function showError(err) {
+    stopCamera();
+    state.error = typeof err === 'string' ? err : (err && err.message) || t('error_network');
+    go('error');
   }
 
   function onView() {
     const v = state.view;
-    if (!v) return;
-    if (v.status === 'pending') return render();
-    stopPolling();
-    if (v.status === 'verified' || v.status === 'rejected') return go('result');
+    if (!v) return render();
     if (v.status === 'paid' || v.status === 'payment_declined') return go('completed');
+    if (v.status === 'verified' || v.status === 'rejected') return go('result');
     return render();
-  }
-
-  function showError(err) {
-    stopPolling();
-    state.error = typeof err === 'string' ? err : err && err.status ? `${err.message}` : t('error_network');
-    go('error');
   }
 
   async function trustIssuer() {
     try {
-      await api('POST', `/api/tx/${state.tx.id}/trust-issuer`);
+      await api('POST', `/api/sale/${state.sale.id}/trust-issuer`);
       state.issuerTrusted = true;
       state.cfg = await api('GET', '/api/config');
       render();
@@ -212,7 +324,7 @@
     try {
       const pin = state.pin;
       state.pin = '';
-      state.view = await api('POST', `/api/tx/${state.tx.id}/pay`, { pin });
+      state.view = await api('POST', `/api/sale/${state.sale.id}/pay`, { pin });
       state.busy = false;
       const p = state.view.payment;
       if (state.view.status === 'verified' && p && p.status === 'declined') {
@@ -229,7 +341,7 @@
 
   async function declinePayment() {
     try {
-      state.view = await api('POST', `/api/tx/${state.tx.id}/decline`);
+      state.view = await api('POST', `/api/sale/${state.sale.id}/decline`);
       onView();
     } catch (err) {
       showError(err);
@@ -272,32 +384,56 @@
           <button class="btn-text danger" data-action="demo" data-tamper="ALTERED_NAME">${esc(t('btn_demo_altered'))}</button>
           <button class="btn-text danger" data-action="demo" data-tamper="EXPIRED">${esc(t('btn_demo_expired'))}</button></section>`
       : '';
+    const noBle = hasBluetooth() ? '' : `<div class="note warn">${esc(t('no_web_bluetooth_note'))}</div>`;
     return `${merchantCard()}
       <section class="card">${cardTitle('badge', t('identity_required'))}<p class="m0">${esc(t('identity_required_body'))}</p>${elementsList()}<p class="muted small m0">${esc(t('intent_note'))}</p></section>
-      <section class="card">${cardTitle('phone', t('instruction_title'))}<p class="m0">${esc(t('instruction_body'))}</p>
-        <button class="btn btn-primary" data-action="start">${ICON.qr}${esc(t('btn_start'))}</button></section>
+      <section class="card">${cardTitle('phone', t('instruction_title'))}<p class="m0">${esc(t('instruction_body'))}</p>${noBle}
+        <button class="btn btn-primary" data-action="scan">${ICON.qr}${esc(t('btn_scan_qr'))}</button></section>
       ${demo}`;
   }
 
+  /** Camera view: the cashier points the terminal at the wallet's proximity QR code. */
+  function scanScreen() {
+    $('#hero').innerHTML = hero(t('qr_title'), t('qr_body'));
+    return `<section class="card"><div class="scan-box"><video id="scan-video" playsinline muted></video><span class="scan-frame" aria-hidden="true"></span></div>
+        <div id="scan-error" class="note fail" ${state.scanError ? '' : 'hidden'}>${esc(state.scanError || '')}</div>
+        <p class="muted small m0 center">${esc(t('scan_help'))}</p></section>
+      <details class="card"><summary class="title-sm">${esc(t('paste_title'))}</summary>
+        <p class="muted small">${esc(t('paste_body'))}</p>
+        <textarea id="paste-input" class="paste" rows="4" spellcheck="false" placeholder="mdoc:owBjMS4w…"></textarea>
+        <button class="btn btn-secondary" data-action="paste">${esc(t('paste_use'))}</button></details>
+      <button class="btn btn-secondary" data-action="cancel">${esc(t('cancel'))}</button>`;
+  }
+
+  /** Wallet QR code read: what the wallet offers, and the Bluetooth connect button (user gesture). */
+  function engagedScreen() {
+    const e = state.engagement;
+    $('#hero').innerHTML = hero(t('engaged_title'), `${state.settings.merchant} · ${money(state.settings.amount, state.settings.currency)}`);
+    const ble = e.ble || {};
+    const yesNo = (v) => t(v ? 'yes' : 'no');
+    const problem = state.compat ? `<div class="note fail">${esc(t(`compat_${state.compat}`))}</div>` : '';
+    return `<div class="banner ok">${ICON.checkCircle}${esc(t('engaged_banner'))}</div>
+      <section class="card">${cardTitle('phone', t('engaged_wallet'))}
+        <dl><div class="kv"><dt>${esc(t('engaged_methods'))}</dt><dd>${esc(e.methods.join(', ') || '—')}</dd></div>
+        <div class="kv"><dt>${esc(t('engaged_peripheral'))}</dt><dd>${esc(yesNo(ble.peripheralServer))}</dd></div>
+        <div class="kv"><dt>${esc(t('engaged_central'))}</dt><dd>${esc(yesNo(ble.centralClient))}</dd></div>
+        ${ble.peripheralServerUuid ? `<div class="kv"><dt>${esc(t('engaged_uuid'))}</dt><dd class="mono">${esc(ble.peripheralServerUuid)}</dd></div>` : ''}</dl>
+        ${problem}
+        ${state.scanError ? `<div class="note warn">${esc(state.scanError)}</div>` : ''}
+        ${state.compat ? '' : `<p class="m0">${esc(t('connect_body'))}</p><button class="btn btn-primary" data-action="connect">${ICON.bluetooth}${esc(t('btn_connect'))}</button>`}
+      </section>
+      <button class="btn btn-secondary" data-action="cancel">${esc(t('cancel'))}</button>`;
+  }
+
   function readingScreen() {
-    const s = state.settings;
-    $('#hero').innerHTML = hero(t('progress_title'), `${s.merchant} · ${money(s.amount, s.currency)}`);
-    const v = state.view || {};
-    const fetched = v.walletStep === 'request_fetched' || v.walletStep === 'response_received';
-    const received = v.walletStep === 'response_received';
-    const steps = [
-      ['QR', true, false],
-      ...(state.cfg && state.cfg.requestMode === 'reference' ? [['FETCHED', fetched, false]] : []),
-      ['CONSENT', received, !received],
-      ['RECEIVED', received, false],
-      ['VERIFYING', false, received]
-    ];
-    const stepsHtml = steps.map(([id, done, active], i) => `<li class="${done ? 'done' : active ? 'active' : ''}"><span class="dot">${done ? ICON.check : active ? '<span class="spinner"></span>' : i + 1}</span>${esc(t(`step_${id}`))}</li>`).join('');
-    return `<section class="card"><h2 class="h-md">${esc(t('scan_title'))}</h2>
-        <div class="qr-box" data-action="zoom" role="button" tabindex="0" aria-label="${esc(t('scan_hint'))}">${state.tx ? state.tx.qr : ''}</div>
-        <div class="qr-meta muted small">${esc(t('scan_hint'))} · ${esc(t('qr_version', state.tx ? state.tx.qrVersion : '?'))}</div>
-        <a class="btn-text center" href="${esc(state.tx ? state.tx.uri : '#')}">${esc(t('open_wallet_here'))}</a></section>
-      <section class="card"><ul class="steps">${stepsHtml}</ul></section>
+    $('#hero').innerHTML = hero(t('progress_title'), `${state.settings.merchant} · ${money(state.settings.amount, state.settings.currency)}`);
+    const items = STEPS.map((id, i) => {
+      const done = state.steps.includes(id);
+      const active = state.active === id;
+      return `<li class="${done ? 'done' : active ? 'active' : ''}"><span class="dot">${done ? ICON.check : active ? '<span class="spinner"></span>' : i + 1}</span>${esc(t(`step_${id}`))}</li>`;
+    }).join('');
+    return `<section class="card"><ul class="steps">${items}</ul>
+        <p class="muted small m0">${esc(t('transport_label'))}: ${esc(state.transportName)}</p></section>
       <button class="btn btn-secondary" data-action="cancel">${esc(t('cancel'))}</button>`;
   }
 
@@ -329,7 +465,7 @@
     const banner = `<div class="banner ${report.verified ? 'ok' : 'fail'}">${report.verified ? ICON.checkCircle : ICON.xCircle}${esc(t(report.verified ? 'identity_verified' : 'identity_failed'))}</div>`;
     const trustCard = report.canTrustIssuer
       ? `<section class="card">${state.issuerTrusted
-        ? `<div class="note ok">${esc(t('issuer_trusted_now'))}</div><button class="btn btn-primary" data-action="start">${ICON.qr}${esc(t('run_again'))}</button>`
+        ? `<div class="note ok">${esc(t('issuer_trusted_now'))}</div><button class="btn btn-primary" data-action="scan">${ICON.qr}${esc(t('run_again'))}</button>`
         : `<div class="note warn">${esc(t('trust_this_issuer_note'))}</div>${report.issuer ? `<div class="small muted">${esc(t('issuer_label'))}: ${esc(report.issuer)}</div>` : ''}<button class="btn btn-secondary" data-action="trust">${ICON.shield}${esc(t('trust_this_issuer'))}</button>`}</section>`
       : '';
     const actions = report.verified
@@ -374,8 +510,9 @@
     const details = state.showDetails
       ? `<section class="card"><dl>
           <div class="kv"><dt>${esc(t('engagement_label'))}</dt><dd>${esc(t('engagement_value'))}</dd></div>
-          <div class="kv"><dt>${esc(t('transport_label'))}</dt><dd>${esc(t('transport_value', state.cfg ? state.cfg.responseMode : ''))}</dd></div>
-          ${v.durationMs != null ? `<div class="kv"><dt>${esc(t('duration_label'))}</dt><dd>${(v.durationMs / 1000).toFixed(1)} s</dd></div>` : ''}
+          <div class="kv"><dt>${esc(t('transport_label'))}</dt><dd>${esc(v.session.transport)}</dd></div>
+          ${v.session.bleIdent != null ? `<div class="kv"><dt>BLE Ident</dt><dd>${esc(t(v.session.bleIdent ? 'ble_ident_ok' : 'ble_ident_bad'))}</dd></div>` : ''}
+          ${v.session.durationMs != null ? `<div class="kv"><dt>${esc(t('duration_label'))}</dt><dd>${(v.session.durationMs / 1000).toFixed(1)} s</dd></div>` : ''}
           ${report.issuer ? `<div class="kv"><dt>${esc(t('issuer_label'))}</dt><dd>${esc(report.issuer)}</dd></div>` : ''}
           ${report.validFrom ? `<div class="kv"><dt>${esc(t('valid_label'))}</dt><dd>${esc(report.validFrom)} → ${esc(report.validUntil)}</dd></div>` : ''}
           ${report.deviceAuth ? `<div class="kv"><dt>${esc(t('device_auth_label'))}</dt><dd>${esc(report.deviceAuth)}</dd></div>` : ''}
@@ -410,19 +547,16 @@
         ${toggle('s-trusted', t('settings_require_trusted'), s.requireTrustedIssuer)}
         ${toggle('s-age', t('settings_require_age'), s.requireAgeOver18)}
         ${toggle('s-portrait', t('settings_portrait'), s.includePortrait)}
+        <div class="field"><label for="s-chunk">${esc(t('settings_ble_chunk'))}</label><input id="s-chunk" inputmode="numeric" pattern="[0-9]*" value="${esc(s.bleChunkSize)}"><span class="muted small">${esc(t('settings_ble_chunk_note'))}</span></div>
         <p class="muted small m0">${esc(t('settings_saved_locally'))}</p>
         <button class="btn btn-primary" type="submit">${esc(t('save'))}</button></form>
       <section class="card"><h2 class="h-sm">${esc(t('settings_trust'))}</h2>
         ${anchors.length ? `<ul class="checks">${anchors.map((a) => `<li class="s-PASS">${ICON.shield}<div><div class="name">${esc(a.label)}</div><div class="detail">${esc(a.subject)}</div></div></li>`).join('')}</ul>` : `<p class="muted m0">${esc(t('no_anchors'))}</p>`}
         <p class="muted small m0">${esc(t('settings_trust_note'))}</p></section>
-      ${state.cfg ? `<section class="card"><h2 class="h-sm">${esc(t('settings_wallet'))}</h2><dl>
-        <div class="kv"><dt>client_id</dt><dd>${esc(state.cfg.clientId)}</dd></div>
-        <div class="kv"><dt>request</dt><dd>${esc(state.cfg.requestMode)}</dd></div>
-        <div class="kv"><dt>response_mode</dt><dd>${esc(state.cfg.responseMode)}</dd></div></dl></section>` : ''}
       <button class="btn btn-secondary" data-action="home">${esc(t('back'))}</button>`;
   }
 
-  const SCREENS = { home: homeScreen, reading: readingScreen, result: resultScreen, payment: paymentScreen, completed: completedScreen, error: errorScreen, settings: settingsScreen };
+  const SCREENS = { home: homeScreen, scan: scanScreen, engaged: engagedScreen, reading: readingScreen, result: resultScreen, payment: paymentScreen, completed: completedScreen, error: errorScreen, settings: settingsScreen };
 
   function render() {
     document.documentElement.lang = state.lang;
@@ -436,6 +570,8 @@
     settingsBtn.hidden = state.screen !== 'home';
     $('#hero').hidden = false;
     $('#screen').innerHTML = SCREENS[state.screen]();
+    if (state.screen === 'scan') startCamera();
+    else stopCamera();
   }
 
   /* ----------------------------------------------------------- events */
@@ -447,25 +583,21 @@
       return render();
     }
     if (e.target.closest('#settings-btn')) return go('settings');
-    if (e.target.closest('#qr-full')) {
-      $('#qr-full').hidden = true;
-      return undefined;
-    }
     const el = e.target.closest('[data-action]');
     if (!el) return undefined;
     const action = el.dataset.action;
     switch (action) {
-      case 'start': return start();
+      case 'scan':
+        resetReading();
+        return go('scan');
+      case 'paste': return onEngagement($('#paste-input').value);
+      case 'connect': return connectBle(); // must stay synchronous (Web Bluetooth user gesture)
       case 'demo': return startDemo(el.dataset.tamper);
       case 'cancel':
       case 'new':
-        forgetTransaction();
+        resetReading();
         return go('home');
       case 'home': return go('home');
-      case 'zoom':
-        $('#qr-full').innerHTML = state.tx ? state.tx.qr : '';
-        $('#qr-full').hidden = false;
-        return undefined;
       case 'trust': return trustIssuer();
       case 'pay-start':
         state.pin = '';
@@ -487,8 +619,6 @@
   });
 
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !$('#qr-full').hidden) $('#qr-full').hidden = true;
-    if (e.key === 'Enter' && e.target.closest && e.target.closest('[data-action="zoom"]')) e.target.click();
     if (state.screen !== 'payment' || state.busy) return;
     if (/^[0-9]$/.test(e.key) && state.pin.length < 8) {
       state.pin += e.key;
@@ -512,7 +642,8 @@
       currency: /^[A-Z]{3}$/.test(currency) ? currency : DEFAULT_SETTINGS.currency,
       requireTrustedIssuer: $('#s-trusted').checked,
       requireAgeOver18: $('#s-age').checked,
-      includePortrait: $('#s-portrait').checked
+      includePortrait: $('#s-portrait').checked,
+      bleChunkSize: Math.min(512, Math.max(20, parseInt($('#s-chunk').value, 10) || 20))
     };
     store.set('anip-pos-settings', state.settings);
     go('home');

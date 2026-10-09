@@ -112,13 +112,14 @@ main.wrap { padding-top: 20px; padding-bottom: 28px; display: flex; flex-directi
 .btn-text.danger { color: var(--danger); font-weight: 600; }
 .btn-text.danger:hover { background: var(--danger-soft); }
 
-/* ------------------------------------------------------------ QR / steps */
+/* -------------------------------------------------------- scan / steps */
 
-.qr-box { align-self: center; width: min(100%, 660px); background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 8px; cursor: zoom-in; }
-.qr-box svg { display: block; width: 100%; height: auto; }
-.qr-meta { text-align: center; }
-.qr-full { position: fixed; inset: 0; z-index: 10; background: #fff; display: grid; place-items: center; padding: 12px; cursor: zoom-out; }
-.qr-full svg { width: min(96vw, 96vh); height: auto; }
+.scan-box { position: relative; align-self: center; width: min(100%, 520px); aspect-ratio: 1; background: #0b1410; border-radius: var(--radius); overflow: hidden; }
+.scan-box video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.scan-frame { position: absolute; inset: 12%; border: 3px solid var(--accent); border-radius: 14px; box-shadow: 0 0 0 999px rgba(0, 0, 0, .25); }
+.paste { width: 100%; font: 14px/1.4 ui-monospace, Menlo, Consolas, monospace; padding: 10px; border: 1px solid var(--line); border-radius: 8px; margin-bottom: 10px; resize: vertical; }
+details.card summary { cursor: pointer; }
+.mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 14px; }
 
 .steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
 .steps li { display: flex; align-items: center; gap: 12px; color: var(--ink-muted); }

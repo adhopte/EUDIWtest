@@ -93,29 +93,10 @@ function coseKeyToJwk(coseKey) {
 }
 
 /**
- * SessionTranscript candidates for OpenID4VP (no response encryption).
- *  - OpenID4VP 1.0 Appendix B.2.6.1 (OpenID4VPHandover)
- *  - ISO/IEC 18013-7 Annex B (OID4VPHandover), when an mdocGeneratedNonce is known
- */
-function sessionTranscripts({ clientId, nonce, responseUri, mdocGeneratedNonce, jwkThumbprint }) {
-  const out = [];
-  const handover = (thumb) => [null, null, ['OpenID4VPHandover', sha('sha-256', encode([clientId, nonce, thumb, responseUri]))]];
-  // With an encrypted response the handover carries the verifier key's JWK thumbprint
-  if (jwkThumbprint) out.push({ name: 'OpenID4VP-1.0 (encrypted)', value: handover(Buffer.from(jwkThumbprint)) });
-  out.push({ name: 'OpenID4VP-1.0', value: handover(null) });
-  if (mdocGeneratedNonce) {
-    const clientIdHash = sha('sha-256', encode([clientId, mdocGeneratedNonce]));
-    const responseUriHash = sha('sha-256', encode([responseUri, mdocGeneratedNonce]));
-    out.push({ name: 'ISO-18013-7', value: [null, null, [clientIdHash, responseUriHash, nonce]] });
-  }
-  return out;
-}
-
-/**
  * Verifies a base64url-encoded ISO/IEC 18013-5 DeviceResponse.
  *
  * @param {string} token
- * @param {{ docType: string, clientId: string, nonce: string, responseUri: string, mdocGeneratedNonce?: string, jwkThumbprint?: Buffer }} expected
+ * @param {{ docType: string, namespace: string, sessionTranscriptBytes: Buffer, readerPrivateKey?: crypto.KeyObject }} expected
  * @returns {Promise<object[]>} one result per document
  */
 async function verifyDeviceResponse(token, expected) {
@@ -212,27 +193,54 @@ function verifyDocument(doc, expected) {
   return result;
 }
 
+/**
+ * DeviceAuthenticationBytes = #6.24(bstr .cbor ["DeviceAuthentication", SessionTranscript,
+ * DocType, DeviceNameSpacesBytes]). The SessionTranscript is embedded as the exact
+ * bytes the reader used (ISO/IEC 18013-5 §9.1.3.4).
+ */
+function deviceAuthenticationBytes(sessionTranscriptBytes, docType, deviceNameSpaces) {
+  const da = Buffer.concat([Buffer.from([0x84]), encode('DeviceAuthentication'), Buffer.from(sessionTranscriptBytes), encode(docType), encode(deviceNameSpaces)]);
+  return encode(new Tag(da, 24));
+}
+
+/** EMacKey = HKDF-SHA256(ECDH(EReaderKey, SDeviceKey), SHA-256(SessionTranscriptBytes), "EMacKey") */
+function eMacKey(readerPrivateKey, deviceKey, sessionTranscriptBytes) {
+  const z = crypto.diffieHellman({ privateKey: readerPrivateKey, publicKey: deviceKey });
+  const salt = sha('sha-256', encode(new Tag(Buffer.from(sessionTranscriptBytes), 24)));
+  return Buffer.from(crypto.hkdfSync('sha256', z, salt, Buffer.from('EMacKey'), 32));
+}
+
 function verifyDeviceAuth(doc, docType, mso, expected) {
   try {
+    if (!expected.sessionTranscriptBytes) return { ok: false, detail: 'no_session_transcript' };
     const deviceSigned = get(doc, 'deviceSigned');
     if (!deviceSigned) return { ok: false, detail: 'missing_device_signed' };
     const deviceAuth = get(deviceSigned, 'deviceAuth');
-    const sig = get(deviceAuth, 'deviceSignature');
-    if (!sig) return { ok: false, detail: get(deviceAuth, 'deviceMac') ? 'device_mac_unsupported' : 'missing_device_signature' };
-    const cose = parseCoseSign1(sig);
-    const deviceKey = publicKeyFromJwk(coseKeyToJwk(get(get(mso, 'deviceKeyInfo'), 'deviceKey')));
-    const nameSpacesBytes = get(deviceSigned, 'nameSpaces');
-    const deviceNameSpaces = new Tag(Buffer.from(untag(nameSpacesBytes, 24)), 24);
+    const deviceKeyJwk = coseKeyToJwk(get(get(mso, 'deviceKeyInfo'), 'deviceKey'));
+    const deviceNameSpaces = new Tag(Buffer.from(untag(get(deviceSigned, 'nameSpaces'), 24)), 24);
+    const daBytes = deviceAuthenticationBytes(expected.sessionTranscriptBytes, docType, deviceNameSpaces);
 
-    for (const st of sessionTranscripts(expected)) {
-      const deviceAuthentication = ['DeviceAuthentication', st.value, docType, deviceNameSpaces];
-      const bytes = encode(new Tag(encode(deviceAuthentication), 24));
-      if (verifyCoseSign1(cose, deviceKey, bytes)) return { ok: true, detail: st.name };
+    const sig = get(deviceAuth, 'deviceSignature');
+    if (sig) {
+      const ok = verifyCoseSign1(parseCoseSign1(sig), publicKeyFromJwk(deviceKeyJwk), daBytes);
+      return ok ? { ok: true, detail: 'DeviceSignature · ISO 18013-5 SessionTranscript' } : { ok: false, detail: 'session_transcript_mismatch' };
     }
-    return { ok: false, detail: 'session_transcript_mismatch' };
+    const mac = get(deviceAuth, 'deviceMac');
+    if (mac) {
+      if (!expected.readerPrivateKey) return { ok: false, detail: 'device_mac_without_reader_key' };
+      const [protectedBytes, , , tag] = untag(mac, 17);
+      const alg = get(decode(protectedBytes), 1);
+      if (alg !== 5) return { ok: false, detail: `unsupported_mac_alg_${alg}` };
+      const key = eMacKey(expected.readerPrivateKey, publicKeyFromJwk(deviceKeyJwk), expected.sessionTranscriptBytes);
+      const macStructure = encode(['MAC0', Buffer.from(protectedBytes), Buffer.alloc(0), daBytes]);
+      const expectedTag = crypto.createHmac('sha256', key).update(macStructure).digest();
+      const ok = Buffer.from(tag).length === expectedTag.length && crypto.timingSafeEqual(Buffer.from(tag), expectedTag);
+      return ok ? { ok: true, detail: 'DeviceMac (HMAC-SHA256) · ISO 18013-5 SessionTranscript' } : { ok: false, detail: 'device_mac_mismatch' };
+    }
+    return { ok: false, detail: 'missing_device_auth' };
   } catch (err) {
     return { ok: false, detail: err.message };
   }
 }
 
-module.exports = { verifyDeviceResponse, encode, sessionTranscripts, coseKeyToJwk };
+module.exports = { verifyDeviceResponse, encode, deviceAuthenticationBytes, eMacKey, coseKeyToJwk };

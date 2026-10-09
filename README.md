@@ -28,16 +28,19 @@ On Render.com, set **Root Directory** to `Benin poc`.
 
 ---
 
-## ➜ Web POS: ANIP PID verification by QR code + payment — [`benin-web-pos/`](benin-web-pos/)
+## ➜ Web POS: in-person PID verification (ISO/IEC 18013-5) + payment — [`benin-web-pos/`](benin-web-pos/)
 
 The same merchant scenario and ANIP / CIVIC interface as the Android POS, in the
-browser. The terminal shows an OpenID4VP QR code, the citizen scans it with the
-EUDI wallet, and the server verifies the encrypted PID mdoc response (issuer
-signature, trust, validity, device authentication, data integrity) before a
-modular payment step that is simulated in this PoC. It is bilingual EN/FR, has a
+browser and over the **ISO/IEC 18013-5 proximity flow**. The terminal's camera
+scans the wallet's `mdoc:` QR code, and the browser connects to the phone over
+Bluetooth (Web Bluetooth, BLE peripheral server mode) with ISO session
+encryption. The server then verifies the PID mdoc (issuer signature, trust,
+validity, device authentication over the SessionTranscript, data integrity)
+before a modular payment step that is simulated in this PoC. The reader is
+checked against the ISO Annex D test vectors. It is bilingual EN/FR, has a
 built-in demo wallet, and deploys on Render with [`render.yaml`](render.yaml)
-(Root Directory `benin-web-pos`). See
-[`benin-web-pos/README.md`](benin-web-pos/README.md) (EN / FR).
+(Root Directory `benin-web-pos`). It needs Chrome on Android or Chrome / Edge on
+a computer. See [`benin-web-pos/README.md`](benin-web-pos/README.md) (EN / FR).
 
 ---
 

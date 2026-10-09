@@ -1,39 +1,92 @@
-# ANIP Web POS — PID verification by QR code + payment
+# ANIP Web POS — in-person PID verification (ISO/IEC 18013-5) + payment
 
-**English** · [Français](#terminal-de-vente-web-anip--vérification-du-pid-par-code-qr--paiement)
+**English** · [Français](#terminal-de-proximité-web-anip--vérification-du-pid-en-personne-isoiec-18013-5--paiement)
 
 Web version of the [Android proximity POS](../benin-proximity-pos/), for the same
 scenario (*Proximity_PID_Payment_Developer_Requirements*). A citizen pays at the
 counter and proves their identity with the **Benin PID mdoc** in their EUDI
-wallet. The terminal shows a **QR code**, the citizen scans it with the wallet and
-consents, the terminal verifies the PID, and the customer then explicitly
-confirms the payment. It uses the same ANIP / CIVIC branding as the Android app,
-the same screens and checks, and is bilingual EN/FR. It runs in any browser
-(tablet, laptop or phone) and deploys on **Render**.
+wallet using the **ISO/IEC 18013-5 proximity flow**:
 
-| Home | QR code | Identity verified | Payment | Complete |
-|---|---|---|---|---|
-| ![](docs/screenshots/1-home.png) | ![](docs/screenshots/2-qr.png) | ![](docs/screenshots/3-identity-verified.png) | ![](docs/screenshots/4-payment.png) | ![](docs/screenshots/5-completed.png) |
+1. the wallet shows its proximity QR code (`mdoc:` device engagement);
+2. the terminal's camera scans it;
+3. the browser connects to the phone over **Bluetooth** (Web Bluetooth);
+4. the browser sets up session encryption and requests the PID.
 
-| Altered data rejected | Expired PID | Accueil (FR) | Terminé (FR) | Settings |
+The citizen consents in the wallet, the PID is verified, and the customer
+explicitly confirms the payment. No OpenID4VP or internet link between the
+wallet and the server is involved: the wallet only talks to the terminal, at
+the counter.
+
+It uses the same ANIP / CIVIC branding, screens and checks as the Android app,
+is bilingual EN/FR, and deploys on **Render**.
+
+| Home | Scan the wallet QR | Wallet found | Reading | Identity verified |
 |---|---|---|---|---|
-| ![](docs/screenshots/3b-identity-altered.png) | ![](docs/screenshots/3c-identity-expired.png) | ![](docs/screenshots/6-home-fr.png) | ![](docs/screenshots/7-completed-fr.png) | ![](docs/screenshots/8-settings.png) |
+| ![](docs/screenshots/1-home.png) | ![](docs/screenshots/2-scan.png) | ![](docs/screenshots/2b-wallet-found.png) | ![](docs/screenshots/2c-reading.png) | ![](docs/screenshots/3-identity-verified.png) |
+
+| Payment | Complete | Altered data rejected | Expired PID | Accueil (FR) |
+|---|---|---|---|---|
+| ![](docs/screenshots/4-payment.png) | ![](docs/screenshots/5-completed.png) | ![](docs/screenshots/3b-identity-altered.png) | ![](docs/screenshots/3c-identity-expired.png) | ![](docs/screenshots/6-home-fr.png) |
+
+## The proximity flow
+
+```
+ Citizen's wallet (phone)                 Terminal browser (this app)                  Server (Render)
+ "Show QR / in person"
+ mdoc:<DeviceEngagement>  ──camera──▶  parse engagement (EDeviceKey, BLE UUID)
+                                       EReaderKey · ECDH · HKDF → SKReader/SKDevice
+ BLE peripheral (advertises UUID) ◀──Web Bluetooth (GATT central)──
+                          ◀── SessionEstablishment (encrypted DeviceRequest)
+ citizen consents
+                          ──▶ SessionData (encrypted DeviceResponse)
+                                       decrypt ──── DeviceResponse + SessionTranscript ──▶ verify
+                                       result / payment ◀─────────────────────────────── report
+```
+
+| ISO/IEC 18013-5 element | Implementation |
+|---|---|
+| Device engagement | QR code `mdoc:` + base64url(DeviceEngagement), read by the camera (`BarcodeDetector`, or jsQR as fallback), or pasted |
+| Session encryption (§9.1.1) | `public/js/mdoc-reader.js` with WebCrypto: P-256 EReaderKey, ECDH, HKDF-SHA256 (`SKReader`/`SKDevice`, salt = SHA-256(SessionTranscriptBytes)), AES-256-GCM with IV = identifier ‖ counter |
+| SessionTranscript | `[DeviceEngagementBytes, EReaderKeyBytes, null]` (QR handover) |
+| Data retrieval | BLE **mdoc peripheral server mode**: the browser is the GATT central and uses the State / Client2Server / Server2Client / Ident characteristics, with 0x01/0x00 chunking, START and END |
+| Device authentication | DeviceSignature (ECDSA) **or** DeviceMac (HMAC-SHA256 with EMacKey from the reader's ephemeral key), over the SessionTranscript |
+| Request | DeviceRequest for `eu.europa.ec.eudi.pid.1` with `intent_to_retain = false` |
+
+**Interoperability evidence.** The reader is checked against the **official
+ISO/IEC 18013-5 Annex D test vectors** (`test/proximity.test.js`, vectors from
+OpenWallet Foundation Multipaz). Its SessionTranscript, SessionEstablishment and
+SessionData decryption match the standard byte for byte, and the server
+verifies the Annex D DeviceMac. The Web Bluetooth transport was exercised in
+Chromium against a GATT peripheral simulator: device filter on the wallet's
+service UUID, notifications, START, 20-byte chunked writes, reassembled
+response, Ident check, END.
+
+### Browser and wallet requirements
+
+* **Terminal browser:** **Chrome on Android** (6.0+), or Chrome / Edge on Windows,
+  macOS or ChromeOS with Bluetooth. Web Bluetooth needs **HTTPS** (Render
+  provides it). iPhone and iPad browsers have no Web Bluetooth. Firefox and
+  Safari are not supported. On Android, Chrome needs the *Nearby devices*
+  (Bluetooth) permission and location turned on.
+* **Wallet:** its QR code must offer **BLE mdoc peripheral server mode**. A web
+  page can only be a Bluetooth *central*, so it cannot serve wallets that only
+  offer *central client mode*. The "Wallet found" screen shows what the wallet
+  offers and explains when it is not compatible. In that case use the
+  [Android POS](../benin-proximity-pos/), which supports both modes and NFC.
+* **Bluetooth write size:** Web Bluetooth does not expose the MTU, so the default
+  is 20-byte writes, which work with every phone. It can be raised in Settings.
 
 ## Deploy on Render
 
-**Option A: Blueprint (one click).** The repository root contains
-[`render.yaml`](../render.yaml).
+**Option A: Blueprint.** The repository root contains [`render.yaml`](../render.yaml).
 
-1. In Render, choose **New → Blueprint** and connect the `adhopte/EUDIWtest`
-   repository and the branch to deploy.
-2. Render creates the `anip-web-pos` web service (root directory `benin-web-pos`,
-   `npm ci --omit=dev`, `npm start`, health check `/health`).
-3. Open `https://<service>.onrender.com`. Nothing else needs configuring: the
-   public URL used in the wallet request (`client_id`, `response_uri`) is read
-   from Render's `RENDER_EXTERNAL_URL`.
+1. In Render, choose **New → Blueprint**, then select `adhopte/EUDIWtest` and the
+   branch.
+2. Render creates the `anip-web-pos` web service (root directory
+   `benin-web-pos`, `npm ci --omit=dev`, `npm start`, health check `/health`).
+3. Open `https://<service>.onrender.com` **in Chrome on the terminal device**.
 
-**Option B: manual web service.** Choose **New → Web Service** on the same
-repository, then set:
+**Option B: manual web service.** Choose **New → Web Service** and set:
 
 | Setting | Value |
 |---|---|
@@ -42,176 +95,136 @@ repository, then set:
 | Build Command | `npm ci --omit=dev` |
 | Start Command | `npm start` |
 | Health Check Path | `/health` |
-| Environment | `NODE_VERSION=22` (optional: `DEMO_PIN`, `DEMO_MODE`) |
+| Environment | `NODE_VERSION=22` (optional: `DEMO_MODE`, `DEMO_PIN`, `BLE_CHUNK_SIZE`) |
 
-Check the deployment: `https://<service>.onrender.com/health` should show your
-`https://…onrender.com/oid4vp/response` as `responseUri`.
+No URL needs configuring: the wallet never contacts the server.
 
-> **Free plan:** the service sleeps after ~15 minutes without traffic. The first
-> request then takes about a minute. Open the page *before* the citizen
-> scans. Transactions live in memory (10 minutes) and are lost on restart, which
-> is fine for a PoC.
+> **Free plan:** the service sleeps after ~15 minutes without traffic, and the
+> first request then takes about a minute. Open the page before the citizen
+> arrives. Sales are kept in memory for 15 minutes.
 
-## Scenario
+## Using it at the counter
 
-1. **Home**: merchant, amount (e.g. 15 000 FCFA), "identity required", the list
-   of requested PID attributes, and a **Show QR code** button.
-2. **QR code**: the terminal displays an OpenID4VP request (tap it to show it full
-   screen). The citizen scans it with the wallet (e.g. SIGMA). The progress steps
-   update live.
-3. **Consent**: the wallet shows what is requested and the citizen approves. The
-   wallet sends the PID **encrypted** to the terminal's server.
-4. **Verification**: the result screen shows the presented identity and the full
-   check list.
-5. **Payment**: only after the identity is verified. The customer confirms with a
-   PIN on the terminal.
-6. **Final screen**: `IDENTITY VERIFIED ✓ / PAYMENT AUTHORIZED ✓ / TRANSACTION COMPLETE ✓`,
-   with the reference, authorization code and an expandable verification report.
+1. **Home**: merchant, amount (e.g. 15 000 FCFA), the requested PID attributes
+   and **Scan wallet QR code**.
+2. The citizen opens the wallet's in-person / "Show QR" screen. The terminal's
+   camera reads the code automatically (or paste the `mdoc:` text).
+3. **Wallet found** shows the wallet's retrieval options. Tap **Connect to the
+   wallet (Bluetooth)** and pick the phone in Chrome's Bluetooth list.
+4. The steps update live: secure session, PID request sent, waiting for consent,
+   presentation received, verifying.
+5. **Result**: identity verified (or the failing checks). Then **Payment**: the
+   customer enters the PIN. Then **Final screen**:
+   `IDENTITY VERIFIED ✓ / PAYMENT AUTHORIZED ✓ / TRANSACTION COMPLETE ✓`.
 
-"Demo without a phone" runs the same flow with a simulated ANIP issuer and wallet
-on the server: genuine PID, altered data, and expired PID.
-
-## How the QR proximity flow works
-
-```
-Terminal (browser)          POS server (Render)                    Citizen's wallet
- Show QR code ───────────▶ create transaction + P-256 key
-              ◀─────────── QR: openid4vp://?…dcql_query…
- polls /api/tx/:id                                     ◀──scan──── reads request
-                                                                    consent
-                           POST /oid4vp/response  ◀─────────────── JWE(vp_token)
-                           decrypt · verify mdoc · report
- result / payment ◀───────
-```
-
-* **Request** ([`src/oid4vp.js`](src/oid4vp.js)): OpenID4VP with a DCQL query for
-  `mso_mdoc` / `eu.europa.ec.eudi.pid.1`. It is by value, so the whole request is
-  in the QR code (version ~29), with `client_id=redirect_uri:<BASE_URL>/oid4vp/response`
-  and `response_mode=direct_post.jwt`. This is the profile the SIGMA wallet
-  (HAIP, EU reference library) accepts without a verifier certificate: with the
-  [Benin eServices PoC](../Benin%20poc/), SIGMA showed its consent screen and
-  returned the encrypted PID response.
-* **Binding**: each transaction gets a fresh nonce, state and ECDH-ES key. The
-  mdoc DeviceAuth is verified over the OpenID4VP SessionTranscript, which
-  includes the client_id, nonce, response_uri and this key's JWK thumbprint. A
-  presentation made for another terminal or session therefore fails.
-* **Why not BLE in the browser:** ISO 18013-5 BLE needs Bluetooth access that
-  web pages don't have reliably (and not at all on iOS). The ISO 18013-7 /
-  OpenID4VP QR flow gives the same in-person result with only a camera on the
-  wallet side. Use the [Android POS](../benin-proximity-pos/) for offline
-  NFC/BLE.
+**Demo without a phone:** a simulated wallet on the server publishes a real
+engagement and answers the encrypted request. The same reader code and server
+verification run; only the transport is HTTPS instead of BLE. The demo has
+genuine, altered and expired PIDs.
 
 ## Requested attributes (Benin PID Rulebook v1.1)
 
 `family_name` and `given_name` are required. `age_over_18`, `document_number`,
 `issuing_authority`, `issuing_country` and `expiry_date` are also requested. The
-portrait is optional (Settings) and off by default. `birth_date`, the address and
-the NPI are **not** requested.
+portrait is optional (Settings) and off by default. `birth_date`, the address
+and the NPI are **not** requested. `intent_to_retain = false` for every element.
 
-DCQL `claim_sets` let a PID that lacks some optional attributes still match;
-the POS then reports what is missing. `DCQL_CLAIM_SETS=false` makes every
-attribute mandatory and gives a smaller QR code (version 27).
-
-## Verification checks
+## Verification checks (server)
 
 Same list as the Android app ([`src/report.js`](src/report.js)):
 
 | Check | How |
 |---|---|
-| PID presented | Response decrypted (JWE ECDH-ES/A128GCM) and DeviceResponse decoded |
+| PID presented | DeviceResponse decrypted by the reader and decoded |
 | Issuer signature | MSO `COSE_Sign1` against the DS certificate in `x5chain` |
 | Trusted issuer (ANIP) | Chain to an anchor in `trust/`. **FAIL** when *Require a trusted issuer* is on (default), **WARN** otherwise |
 | Credential type | docType `eu.europa.ec.eudi.pid.1` |
 | Validity period | MSO `validFrom ≤ now ≤ validUntil` |
-| Holder/device authentication | DeviceSignature over the SessionTranscript |
-| Data integrity | The digest of each disclosed element matches the MSO, so **altered data fails** |
-| Required attributes | Names present |
-| Age over 18 | `age_over_18`; mandatory if *Require age 18+* is on |
+| Holder/device authentication | DeviceSignature or DeviceMac over **this session's** SessionTranscript |
+| Data integrity | The digest of each element matches the MSO, so **altered data fails** |
+| Required attributes, age 18+ | Names present; `age_over_18` when *Require age 18+* is on |
 | Benin PID | `issuing_country = BJ` (warning otherwise) |
-| Revocation | **Not checked**: this PoC has no status-list service. Reported as such, never simulated |
+| Revocation | **Not checked**: this PoC has no status-list service. It is reported as such, never simulated |
 
-The identity is verified when no check fails. Otherwise payment is not offered.
+**Replay protection:** every session uses a fresh EReaderKey, so the server
+refuses a SessionTranscript it has already seen. A response presented with
+another session's transcript fails device authentication.
 
 ## Payment boundary
 
 [`src/payment.js`](src/payment.js): a gateway has `displayName` and
 `authorize(request, { pin })`. It receives only the reference, merchant, amount,
 currency and `{ identityVerified, ageOver18 }`. **No name, document number or
-portrait** is sent. `SimulatedPaymentGateway` uses `DEMO_PIN` (default `1234`),
-allows 3 attempts and returns a 6-character authorization code. It is clearly
-labelled "Simulated payment (demo)". Replace it in `server.js` with a real
-acquirer or mobile-money client.
+portrait** is sent. The simulated gateway uses `DEMO_PIN` (default `1234`) with
+3 attempts and is labelled "Simulated payment (demo)". Replace it in
+`server.js` with a real acquirer or mobile-money client.
 
-## Trust anchors and SIGMA
+## Trust anchors
 
-* Put the **ANIP IACA** PEM in [`trust/`](trust/README.md) for real wallets.
-* Until you have it, a SIGMA PID fails *Trusted issuer*. Either turn off
-  *Require a trusted issuer* in Settings (it becomes a warning), or tap **Trust
-  this issuer (demo)** on the result screen. That adds the presented issuer
-  certificate (in memory, until restart) so the next scan passes. It is for
-  testing only.
-* Settings (merchant, amount, policy) are stored per browser.
-
-## Configuration
-
-See [`.env.example`](.env.example). The main variables are `BASE_URL` (auto on
-Render), `REQUEST_MODE`, `CLIENT_ID`, `RESPONSE_MODE`, `DCQL_CLAIM_SETS`,
-`TRUST_DIR`, `DEMO_MODE`, `DEMO_PIN` and `PIN_ATTEMPTS`.
+Put the **ANIP IACA** PEM in [`trust/`](trust/README.md). Until you have it, a
+real wallet's PID fails *Trusted issuer*. To test, either turn off *Require a
+trusted issuer* in Settings (the check becomes a warning), or tap **Trust this
+issuer (demo)** on the result screen. That adds the presented issuer
+certificate in memory until the server restarts, and is for testing only.
 
 ## Run locally and test
 
 ```bash
 cd benin-web-pos
 npm install
-npm start            # http://localhost:3000 (demo mode works locally)
-npm test             # 13 tests: request shape, checks, tampering, replay, payment, access control
+npm start      # http://localhost:3000 (camera and Web Bluetooth work on localhost)
+npm test       # 17 tests: ISO Annex D vectors, proximity session, checks, tampering, replay, MAC, payment
 ```
-
-A real wallet must reach `response_uri`, so test with a phone against the Render
-URL (or an ngrok tunnel with `BASE_URL=https://…ngrok…`).
 
 ## Project layout
 
 ```
-server.js               Express: terminal API, wallet endpoints, static UI
-src/oid4vp.js           OpenID4VP request (QR), encrypted response handling
-src/report.js           check list (same as the Android PidVerifier)
-src/payment.js          payment gateway boundary + simulated gateway
-src/demo/wallet.js      simulated ANIP issuer + wallet (genuine / altered / expired)
-src/verify/             mdoc, JOSE/JWE and trust code shared with "Benin poc"
-public/                 terminal UI (vanilla JS, ANIP theme, EN/FR)
-test/pos.test.js        node:test suite
+public/js/mdoc-reader.js  ISO 18013-5 reader: engagement, session encryption, DeviceRequest, Web Bluetooth GATT
+public/js/cbor.js         small CBOR codec (browser + Node)
+public/js/app.js          terminal UI (camera scan, connect, steps, result, payment), EN/FR in i18n.js
+server.js                 verification API, sales/payment, demo wallet endpoints
+src/verify/mdoc.js        DeviceResponse verification (issuer auth, digests, validity, DeviceSignature/DeviceMac)
+src/report.js             check list (same as the Android PidVerifier)
+src/payment.js            payment gateway boundary + simulated gateway
+src/demo/wallet.js        simulated ANIP issuer + wallet acting as an mdoc (genuine / altered / expired)
+test/                     node:test suites + ISO Annex D vectors
 ```
 
 ## Status and limits
 
-* Verification, tampering, replay and the payment flow are tested with the
-  simulated wallet. The request profile is the one SIGMA accepts in the Benin
-  eServices PoC, but **this POS has not yet been tried with SIGMA**.
-* The ANIP IACA is not bundled. Payment is simulated, revocation is not checked,
-  and requests are unsigned (HAIP production needs a verifier certificate and
-  signed request objects).
+* The protocol is verified against the ISO test vectors, and the BLE transport
+  against a GATT simulator. **It has not yet been tried with a real wallet on a
+  phone**, including SIGMA. The wallet must offer BLE peripheral server mode
+  (see above).
+* NFC engagement is not available in browsers (use the Android POS). Reader
+  authentication (ReaderAuth) is not sent.
+* The ANIP IACA is not bundled, payment is simulated, and revocation is not
+  checked.
 
 ---
 
-# Terminal de vente web ANIP — vérification du PID par code QR + paiement
+# Terminal de proximité web ANIP — vérification du PID en personne (ISO/IEC 18013-5) + paiement
 
-[English](#anip-web-pos--pid-verification-by-qr-code--payment) · **Français**
+[English](#anip-web-pos--in-person-pid-verification-isoiec-18013-5--paiement) · **Français**
 
 Version web du [terminal de proximité Android](../benin-proximity-pos/), pour le
-même scénario. Le terminal affiche un **code QR**, le citoyen le scanne avec son
-portefeuille EUDI et consent, le terminal vérifie le **PID mdoc du Bénin**, puis le
-client confirme explicitement le paiement. L'application reprend l'identité
-visuelle ANIP / CIVIC, les mêmes écrans et contrôles, et est bilingue FR/EN.
+même scénario, avec le **flux de proximité ISO/IEC 18013-5** :
+
+1. le portefeuille affiche son code QR de proximité (`mdoc:`) ;
+2. la caméra du terminal le lit ;
+3. le navigateur se connecte au téléphone en **Bluetooth** (Web Bluetooth) ;
+4. le navigateur établit le chiffrement de session et demande le **PID mdoc du Bénin**.
+
+Le citoyen consent dans son portefeuille, le serveur vérifie le PID, puis le
+client confirme le paiement. Il n'y a ni OpenID4VP ni échange entre le
+portefeuille et le serveur : tout se passe au comptoir.
 
 ## Déploiement sur Render
 
-**Option A : Blueprint.** Dans Render, choisissez **New → Blueprint**, puis le dépôt
-`adhopte/EUDIWtest` et la branche. Le fichier [`render.yaml`](../render.yaml) crée
-le service `anip-web-pos`. L'URL publique est lue automatiquement depuis
-`RENDER_EXTERNAL_URL` : aucune configuration n'est nécessaire.
+**Blueprint :** choisissez **New → Blueprint**, puis le dépôt `adhopte/EUDIWtest`
+et la branche ([`render.yaml`](../render.yaml)).
 
-**Option B : service web manuel.**
+**Service manuel :**
 
 | Paramètre | Valeur |
 |---|---|
@@ -219,58 +232,57 @@ le service `anip-web-pos`. L'URL publique est lue automatiquement depuis
 | Build Command | `npm ci --omit=dev` |
 | Start Command | `npm start` |
 | Health Check Path | `/health` |
-| Environnement | `NODE_VERSION=22` |
 
-Sur l'offre gratuite, le service se met en veille après ~15 minutes : ouvrez la
-page avant que le citoyen scanne.
+Ouvrez ensuite l'URL `https://…onrender.com` **dans Chrome sur l'appareil du
+terminal**.
 
-## Déroulement
+## Prérequis
 
-1. **Accueil** : marchand, montant, attributs PID demandés, bouton **Afficher le code QR**.
-2. **Code QR** : le citoyen le scanne avec son portefeuille (ex. SIGMA). Touchez le
-   code pour l'afficher en plein écran.
-3. **Consentement** dans le portefeuille ; la réponse arrive **chiffrée** sur le serveur.
-4. **Vérification** : identité présentée et liste des contrôles.
-5. **Paiement** (uniquement si l'identité est vérifiée) : le client saisit son PIN.
-6. **Écran final** : `IDENTITÉ VÉRIFIÉE ✓ / PAIEMENT AUTORISÉ ✓ / TRANSACTION TERMINÉE ✓`.
+* **Navigateur du terminal :** Chrome sur Android, ou Chrome / Edge sur
+  Windows, macOS ou ChromeOS avec Bluetooth, en **HTTPS**. Les iPhone et iPad
+  ne sont pas pris en charge (pas de Web Bluetooth).
+* **Portefeuille :** son QR doit proposer le **mode serveur périphérique BLE**.
+  Une page web ne peut être que *central* Bluetooth. Sinon, utilisez le terminal
+  Android (les deux modes, plus le NFC).
 
-« Démo sans téléphone » : PID authentique, données modifiées, PID expiré, avec
-un émetteur et un portefeuille ANIP simulés sur le serveur.
+## Au comptoir
+
+1. **Scanner le QR du portefeuille** : la caméra lit le code `mdoc:` (ou collez-le).
+2. **Portefeuille détecté** : touchez **Connecter le portefeuille (Bluetooth)**,
+   puis choisissez le téléphone.
+3. Session sécurisée, demande envoyée, consentement, réception, vérification.
+4. Résultat, puis paiement par PIN, puis
+   `IDENTITÉ VÉRIFIÉE ✓ / PAIEMENT AUTORISÉ ✓ / TRANSACTION TERMINÉE ✓`.
+
+**Démo sans téléphone :** un portefeuille simulé sur le serveur répond avec un
+vrai engagement et le chiffrement de session (PID authentique, falsifié ou
+expiré). Seul le transport est en HTTPS au lieu du BLE.
 
 ## Points clés
 
-* **Demande** : OpenID4VP + DCQL (`mso_mdoc`, `eu.europa.ec.eudi.pid.1`), par
-  valeur dans le QR (version ~29), `client_id=redirect_uri:…`, réponse chiffrée
-  (`direct_post.jwt`). C'est le profil accepté par SIGMA dans le PoC eServices
-  (écran de consentement affiché et réponse chiffrée envoyée).
-* **Attributs** : nom et prénom (requis), majorité, numéro CNIB, autorité et
-  pays de délivrance, date d'expiration. La photo est optionnelle. Ni date de
-  naissance, ni adresse, ni NPI.
-* **Contrôles** : signature de l'émetteur, émetteur de confiance, type, validité,
-  authentification de l'appareil, intégrité (**une donnée modifiée échoue**),
-  attributs requis, majorité et pays BJ. La **révocation n'est pas vérifiée**
-  (pas de service de statut dans ce PoC) et c'est indiqué comme tel.
-* **Paiement** : interface `PaymentGateway` remplaçable. Seuls la référence, le
-  montant et `{identityVerified, ageOver18}` sont transmis. Le paiement simulé
-  (PIN `1234`, 3 essais) est identifié comme démo.
-* **Ancres de confiance** : placez l'IACA ANIP dans `trust/`. Pour tester SIGMA
-  avant cela, désactivez *Exiger un émetteur de confiance* ou utilisez **Faire
-  confiance à cet émetteur (démo)**.
-* **Pourquoi pas le BLE dans le navigateur** : les pages web n'ont pas un accès
-  Bluetooth fiable (aucun sur iOS). Le flux QR ISO 18013-7 / OpenID4VP donne le
-  même résultat en présentiel. Pour le mode hors ligne NFC/BLE, utilisez le
-  terminal Android.
+* **Conformité :** le lecteur est vérifié avec les **vecteurs de test officiels de
+  l'annexe D d'ISO/IEC 18013-5** (correspondance octet par octet), et le
+  transport Web Bluetooth avec un simulateur de périphérique GATT.
+* **Contrôles :**
+  * signature de l'émetteur et émetteur de confiance ;
+  * type et validité ;
+  * authentification de l'appareil (DeviceSignature ou DeviceMac) sur la
+    SessionTranscript de **cette** session ;
+  * intégrité (**une donnée modifiée échoue**) ;
+  * attributs requis, majorité et pays BJ ;
+  * refus des sessions rejouées.
 
-## Exécution locale
-
-```bash
-cd benin-web-pos && npm install && npm start   # http://localhost:3000
-npm test                                       # 13 tests
-```
+  La **révocation n'est pas vérifiée** et c'est indiqué comme tel.
+* **Paiement :** l'interface `PaymentGateway` est remplaçable. Seuls la
+  référence, le montant et `{identityVerified, ageOver18}` sont transmis. Le
+  paiement simulé utilise le PIN `1234`.
+* **Ancres de confiance :** placez l'IACA ANIP dans `trust/`. Pour tester avec un
+  vrai portefeuille avant cela, utilisez « Faire confiance à cet émetteur (démo) »
+  ou désactivez l'exigence dans les paramètres.
 
 ## Limites
 
-Le terminal n'a pas encore été testé avec SIGMA. L'IACA ANIP n'est pas
-fournie. Le paiement est simulé, la révocation n'est pas vérifiée, et les
-demandes ne sont pas signées (la mise en production HAIP nécessite un certificat
-vérificateur).
+Le terminal n'a pas encore été testé sur téléphone avec un vrai portefeuille
+(SIGMA compris). L'engagement NFC n'est pas possible dans un navigateur, et
+l'authentification du lecteur n'est pas envoyée. L'IACA ANIP n'est pas fournie,
+le paiement est simulé et la révocation n'est pas vérifiée.

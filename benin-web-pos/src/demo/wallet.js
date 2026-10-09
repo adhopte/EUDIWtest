@@ -1,13 +1,16 @@
 'use strict';
 
 /**
- * DEMO ONLY — a simulated ANIP issuer and citizen wallet ("Demo without a phone").
+ * DEMO ONLY — a simulated ANIP issuer and a simulated citizen wallet acting as
+ * an ISO/IEC 18013-5 mdoc ("Demo without a phone").
  *
- * Issues a rulebook-conformant PID mdoc (persona KOSSI Jean) signed by an
- * ephemeral demo IACA / document signer generated at start-up, and presents the
- * requested elements exactly like a wallet: DeviceResponse with DeviceAuth over
- * the OpenID4VP SessionTranscript, encrypted to the terminal's key
- * (direct_post.jwt). The POS verifies it with the same code as a real wallet.
+ * The wallet publishes a real DeviceEngagement ("mdoc:" QR text, EDeviceKey,
+ * BLE peripheral-server option), then answers the reader's SessionEstablishment
+ * exactly like a phone would: ECDH + HKDF session keys, AES-256-GCM, a
+ * DeviceResponse with the requested PID elements and DeviceAuth over the
+ * reader's SessionTranscript. Only the transport differs: HTTPS instead of BLE.
+ * The browser runs the same reader code (mdoc-reader.js) and the server the
+ * same verification as for a real wallet.
  *
  * Tamper modes reproduce the Android app's simulations:
  *   NONE         genuine PID
@@ -18,17 +21,21 @@
 const crypto = require('crypto');
 require('reflect-metadata');
 const x509 = require('@peculiar/x509');
-const { Tag } = require('cbor-x');
-const { encode, sessionTranscripts } = require('../verify/mdoc');
+const { Decoder, Tag } = require('cbor-x');
+const { encode, deviceAuthenticationBytes, eMacKey } = require('../verify/mdoc');
 const { b64u, sign, sha } = require('../verify/jose');
-const jwe = require('../verify/jwe');
 const trust = require('../verify/trust');
 const profile = require('../profile');
 
 x509.cryptoProvider.set(crypto.webcrypto);
 
+const decoder = new Decoder({ mapsAsObjects: false, useRecords: false });
+const decode = (bytes) => decoder.decode(bytes);
+const get = (m, k) => (m instanceof Map ? m.get(k) : m && m[k]);
+
 const ALG = { name: 'ECDSA', namedCurve: 'P-256', hash: 'SHA-256' };
 const DEMO_ANCHOR = 'DEMO ANIP IACA (simulated)';
+const TAMPER = ['NONE', 'ALTERED_NAME', 'EXPIRED'];
 
 /** Demo persona from the rulebook "Benin Display Simulation" sheet. */
 const PERSONA = {
@@ -49,6 +56,11 @@ const PERSONA = {
 const FULL_DATES = ['birth_date', 'issuance_date', 'expiry_date'];
 
 let issuer = null;
+const devices = new Map(); // simulated wallets waiting for a reader
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, d] of devices) if (now - d.createdAt > 5 * 60 * 1000) devices.delete(id);
+}, 60 * 1000).unref();
 
 async function init() {
   if (issuer) return issuer;
@@ -85,34 +97,64 @@ async function init() {
   return issuer;
 }
 
+const coseKey = (publicKey) => {
+  const jwk = publicKey.export({ format: 'jwk' });
+  return new Map([[1, 2], [-1, 1], [-2, b64u.decode(jwk.x)], [-3, b64u.decode(jwk.y)]]);
+};
+const keyFromCose = (m) => crypto.createPublicKey({ key: { kty: 'EC', crv: 'P-256', x: b64u.encode(get(m, -2)), y: b64u.encode(get(m, -3)) }, format: 'jwk' });
 const tdate = (d) => new Tag(d.toISOString().replace(/\.\d{3}Z$/, 'Z'), 0);
 const mdocValue = (name, value) => (FULL_DATES.includes(name) ? new Tag(value, 1004) : value);
 const itemBytes = (digestID, name, value, random) =>
   new Tag(encode({ digestID, random, elementIdentifier: name, elementValue: mdocValue(name, value) }), 24);
+const gcmIv = (identifier, counter) => {
+  const iv = Buffer.alloc(12);
+  iv[7] = identifier;
+  iv.writeUInt32BE(counter, 8);
+  return iv;
+};
 
-/** Issues the PID mdoc and presents `requested` as a base64url DeviceResponse. */
-function presentPid({ requested, clientId, nonce, responseUri, jwkThumbprint = null, tamper = 'NONE' }) {
+/* ------------------------------------------------- device engagement */
+
+/**
+ * A simulated wallet showing its proximity QR code.
+ * @returns {{ id: string, qr: string }}
+ */
+function createDevice({ tamper = 'NONE', deviceAuth = 'signature' } = {}) {
   if (!issuer) throw new Error('demo issuer not initialised');
+  const eDevice = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
+  const bleOptions = new Map([[0, true], [1, false], [10, crypto.randomBytes(16)]]);
+  const engagement = new Map([
+    [0, '1.0'],
+    [1, [1, new Tag(encode(coseKey(eDevice.publicKey)), 24)]],
+    [2, [[2, 1, bleOptions]]]
+  ]);
+  const engagementBytes = encode(engagement);
+  const id = crypto.randomUUID();
+  devices.set(id, { id, createdAt: Date.now(), eDevice, engagementBytes, tamper: TAMPER.includes(tamper) ? tamper : 'NONE', deviceAuth });
+  return { id, qr: `mdoc:${b64u.encode(engagementBytes)}` };
+}
+
+/* --------------------------------------------------------- the PID */
+
+/** Issues the PID mdoc and returns the Document for the requested elements. */
+function presentPid({ requested, sessionTranscriptBytes, readerKey, tamper, deviceAuth }) {
   const { namespace, docType } = profile.PID;
   const device = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
-  const jwk = device.publicKey.export({ format: 'jwk' });
   const now = new Date();
+  const day = 24 * 3600 * 1000;
 
   const items = Object.entries(PERSONA).map(([name, value], i) => {
     const random = crypto.randomBytes(16);
     return { name, random, tagged: itemBytes(i, name, value, random) };
   });
   const digests = new Map(items.map((it, i) => [i, sha('SHA-256', encode(it.tagged))]));
-
-  const expired = tamper === 'EXPIRED';
-  const day = 24 * 3600 * 1000;
   const mso = {
     version: '1.0',
     digestAlgorithm: 'SHA-256',
     valueDigests: { [namespace]: digests },
-    deviceKeyInfo: { deviceKey: new Map([[1, 2], [-1, 1], [-2, b64u.decode(jwk.x)], [-3, b64u.decode(jwk.y)]]) },
+    deviceKeyInfo: { deviceKey: coseKey(device.publicKey) },
     docType,
-    validityInfo: expired
+    validityInfo: tamper === 'EXPIRED'
       ? { signed: tdate(new Date(now - 400 * day)), validFrom: tdate(new Date(now - 400 * day)), validUntil: tdate(new Date(now - 30 * day)) }
       : { signed: tdate(now), validFrom: tdate(new Date(now - 3600 * 1000)), validUntil: tdate(new Date(now.getTime() + 365 * day)) }
   };
@@ -127,37 +169,63 @@ function presentPid({ requested, clientId, nonce, responseUri, jwkThumbprint = n
   }
 
   const deviceNameSpaces = new Tag(encode(new Map()), 24);
-  const [st] = sessionTranscripts({ clientId, nonce, responseUri, jwkThumbprint });
-  const deviceAuthBytes = encode(new Tag(encode(['DeviceAuthentication', st.value, docType, deviceNameSpaces]), 24));
-  const devProtected = encode(new Map([[1, -7]]));
-  const devSig = sign('ES256', device.privateKey, encode(['Signature1', devProtected, Buffer.alloc(0), deviceAuthBytes]));
+  const daBytes = deviceAuthenticationBytes(sessionTranscriptBytes, docType, deviceNameSpaces);
+  let auth;
+  if (deviceAuth === 'mac') {
+    const macProtected = encode(new Map([[1, 5]]));
+    const key = eMacKey(device.privateKey, readerKey, sessionTranscriptBytes);
+    const tag = crypto.createHmac('sha256', key).update(encode(['MAC0', macProtected, Buffer.alloc(0), daBytes])).digest();
+    auth = { deviceMac: [macProtected, new Map(), null, tag] };
+  } else {
+    const devProtected = encode(new Map([[1, -7]]));
+    auth = { deviceSignature: [devProtected, new Map(), null, sign('ES256', device.privateKey, encode(['Signature1', devProtected, Buffer.alloc(0), daBytes]))] };
+  }
 
-  const deviceResponse = {
+  return {
     version: '1.0',
     documents: [
       {
         docType,
         issuerSigned: { nameSpaces: { [namespace]: items.filter((it) => requested.includes(it.name)).map((it) => it.tagged) }, issuerAuth },
-        deviceSigned: { nameSpaces: deviceNameSpaces, deviceAuth: { deviceSignature: [devProtected, new Map(), null, devSig] } }
+        deviceSigned: { nameSpaces: deviceNameSpaces, deviceAuth: auth }
       }
     ],
     status: 0
   };
-  return Buffer.from(encode(deviceResponse)).toString('base64url');
 }
+
+/* ----------------------------------------------------- data retrieval */
 
 /**
- * The body the wallet would POST to response_uri for this transaction
- * (JWE-encrypted to the terminal's key with direct_post.jwt).
+ * The wallet receives the reader's SessionEstablishment and answers with
+ * SessionData (encrypted DeviceResponse) — ISO/IEC 18013-5 §9.1.1.
  */
-function respond(tx, { tamper = 'NONE' } = {}) {
-  const jwkThumbprint = tx.encryption ? jwe.thumbprint(tx.encryption.jwk) : null;
-  const requested = profile.elements(tx.pos.policy.includePortrait).map((e) => e.id);
-  const presentation = presentPid({ requested, clientId: tx.clientId, nonce: tx.nonce, responseUri: tx.responseUri, jwkThumbprint, tamper });
-  const vpToken = { pid: [presentation] };
-  if (!tx.encryption) return { state: tx.state, vp_token: JSON.stringify(vpToken) };
-  const payload = JSON.stringify({ state: tx.state, vp_token: vpToken });
-  return { response: jwe.encrypt(payload, tx.encryption.jwk, { apv: Buffer.from(tx.nonce), apu: crypto.randomBytes(16) }) };
+function handleMessage(id, establishmentBytes) {
+  const dev = devices.get(id);
+  if (!dev) throw Object.assign(new Error('unknown_demo_wallet'), { status: 404 });
+  devices.delete(id); // one presentation per engagement
+
+  const est = decode(establishmentBytes);
+  const eReaderKeyBytes = Buffer.from(get(est, 'eReaderKey').value);
+  const readerKey = keyFromCose(decode(eReaderKeyBytes));
+  const sessionTranscriptBytes = encode([new Tag(dev.engagementBytes, 24), new Tag(eReaderKeyBytes, 24), null]);
+  const salt = sha('SHA-256', encode(new Tag(sessionTranscriptBytes, 24)));
+  const z = crypto.diffieHellman({ privateKey: dev.eDevice.privateKey, publicKey: readerKey });
+  const skReader = Buffer.from(crypto.hkdfSync('sha256', z, salt, Buffer.from('SKReader'), 32));
+  const skDevice = Buffer.from(crypto.hkdfSync('sha256', z, salt, Buffer.from('SKDevice'), 32));
+
+  const data = Buffer.from(get(est, 'data'));
+  const decipher = crypto.createDecipheriv('aes-256-gcm', skReader, gcmIv(0, 1));
+  decipher.setAuthTag(data.subarray(data.length - 16));
+  const deviceRequest = decode(Buffer.concat([decipher.update(data.subarray(0, data.length - 16)), decipher.final()]));
+
+  const itemsRequest = decode(Buffer.from(get(get(deviceRequest, 'docRequests')[0], 'itemsRequest').value));
+  const requested = [...(get(get(itemsRequest, 'nameSpaces'), profile.PID.namespace) || new Map()).keys()];
+  const deviceResponse = presentPid({ requested, sessionTranscriptBytes, readerKey, tamper: dev.tamper, deviceAuth: dev.deviceAuth });
+
+  const cipher = crypto.createCipheriv('aes-256-gcm', skDevice, gcmIv(1, 1));
+  const encrypted = Buffer.concat([cipher.update(encode(deviceResponse)), cipher.final(), cipher.getAuthTag()]);
+  return encode(new Map([['data', encrypted]]));
 }
 
-module.exports = { init, presentPid, respond, PERSONA, DEMO_ANCHOR, TAMPER: ['NONE', 'ALTERED_NAME', 'EXPIRED'] };
+module.exports = { init, createDevice, handleMessage, PERSONA, DEMO_ANCHOR, TAMPER };

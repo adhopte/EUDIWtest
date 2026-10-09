@@ -2,7 +2,7 @@
   "name": "anip-web-pos",
   "version": "1.0.0",
   "private": true,
-  "description": "ANIP web POS: verify the Benin PID (mdoc) in person by QR code (OpenID4VP cross-device), then take a modular (simulated) payment. EN/FR.",
+  "description": "ANIP web POS: in-person Benin PID (mdoc) verification over the ISO/IEC 18013-5 proximity flow (wallet QR engagement + Web Bluetooth), then a modular (simulated) payment. EN/FR.",
   "main": "server.js",
   "type": "commonjs",
   "scripts": {
@@ -19,7 +19,7 @@
     "cbor-x": "^1.6.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
-    "qrcode": "^1.5.4",
+    "jsqr": "^1.4.0",
     "reflect-metadata": "^0.2.2"
   }
 }
