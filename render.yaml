@@ -1,0 +1,19 @@
+# Render Blueprint (https://render.com/docs/blueprint-spec)
+# Deploys the ANIP web POS (benin-web-pos/). BASE_URL is taken from
+# RENDER_EXTERNAL_URL automatically, so no URL needs to be configured.
+services:
+  - type: web
+    name: anip-web-pos
+    runtime: node
+    rootDir: benin-web-pos
+    plan: free
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: DEMO_MODE
+        value: "true"
+      - key: DEMO_PIN
+        value: "1234"

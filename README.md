@@ -28,6 +28,19 @@ On Render.com, set **Root Directory** to `Benin poc`.
 
 ---
 
+## ➜ Web POS: ANIP PID verification by QR code + payment — [`benin-web-pos/`](benin-web-pos/)
+
+The same merchant scenario and ANIP / CIVIC interface as the Android POS, in the
+browser. The terminal shows an OpenID4VP QR code, the citizen scans it with the
+EUDI wallet, and the server verifies the encrypted PID mdoc response (issuer
+signature, trust, validity, device authentication, data integrity) before a
+modular payment step that is simulated in this PoC. It is bilingual EN/FR, has a
+built-in demo wallet, and deploys on Render with [`render.yaml`](render.yaml)
+(Root Directory `benin-web-pos`). See
+[`benin-web-pos/README.md`](benin-web-pos/README.md) (EN / FR).
+
+---
+
 ## ➜ Proximity POS: ANIP PID verification + payment (Android) — [`benin-proximity-pos/`](benin-proximity-pos/)
 
 Android point-of-sale verifier with ANIP / CIVIC branding. It reads the Benin

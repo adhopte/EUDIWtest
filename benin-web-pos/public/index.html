@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#004d2d">
+  <title>ANIP Web POS</title>
+  <link rel="icon" href="/img/favicon.png">
+  <link rel="stylesheet" href="/css/pos.css">
+  <script src="/js/i18n.js" defer></script>
+  <script src="/js/app.js" defer></script>
+</head>
+<body>
+  <div class="tricolour" aria-hidden="true"><span></span><span></span><span></span></div>
+  <div class="gov-bar">
+    <div class="wrap">
+      <span class="republic" data-t="republic">REPUBLIC OF BENIN</span>
+      <button class="lang" data-lang="en" aria-pressed="false">EN</button>
+      <button class="lang" data-lang="fr" aria-pressed="false">FR</button>
+    </div>
+  </div>
+  <header class="site-header">
+    <div class="wrap">
+      <img class="logo" src="/img/anip-logo.png" alt="ANIP — Agence Nationale d’Identification des Personnes">
+      <span class="spacer"></span>
+      <button class="icon-btn" id="settings-btn" data-t-title="settings" title="Settings"></button>
+    </div>
+  </header>
+  <section class="hero" id="hero" aria-live="polite"></section>
+  <main class="wrap" id="screen" aria-live="polite">
+    <noscript>This terminal needs JavaScript.</noscript>
+  </main>
+  <footer class="site-footer">
+    <div class="wrap">
+      <div class="agency">
+        <img class="arms" src="/img/benin-arms.png" alt="">
+        <div><strong data-t="footer_agency">Agence Nationale d’Identification des Personnes</strong><small data-t="republic">REPUBLIC OF BENIN</small></div>
+      </div>
+      <div class="motto">FRATERNITÉ · JUSTICE · TRAVAIL</div>
+      <div class="demo" data-t="footer_demo">Demonstration environment – test data only</div>
+    </div>
+    <div class="tricolour" aria-hidden="true"><span></span><span></span><span></span></div>
+  </footer>
+  <div class="qr-full" id="qr-full" hidden></div>
+</body>
+</html>

@@ -1,0 +1,28 @@
+name: ANIP web POS (Node)
+
+on:
+  push:
+    paths:
+      - "benin-web-pos/**"
+      - ".github/workflows/web-pos.yml"
+  pull_request:
+    paths:
+      - "benin-web-pos/**"
+      - ".github/workflows/web-pos.yml"
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: benin-web-pos
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: benin-web-pos/package-lock.json
+      - run: npm ci
+      - run: npm test
