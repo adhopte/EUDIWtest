@@ -47,6 +47,25 @@ class LaunchTest {
         compose.onNodeWithText(compose.activity.getString(R.string.result_payment), substring = true).assertExists()
     }
 
+    @Test fun switchesToFrenchRunsDemoAndBack() {
+        waitFor(compose.activity.getString(R.string.btn_demo_valid))
+        compose.onNodeWithText("FR").performClick()
+        compose.waitUntilAtLeastOneExists(hasText("Démo sans téléphone", substring = true), timeoutMillis = 20_000)
+
+        // Full demo transaction in French (the activity was recreated with the FR locale).
+        click("Simuler le portefeuille du citoyen")
+        waitFor("Continuer vers le paiement"); click("Continuer vers le paiement")
+        waitFor("Autoriser le paiement")
+        "1234".forEach { d -> compose.onNodeWithText(d.toString()).performScrollTo().performClick() }
+        click("Autoriser le paiement")
+        waitFor("Nouvelle transaction")
+        compose.onNodeWithText("PAIEMENT AUTORISÉ", substring = true).assertExists()
+        click("Nouvelle transaction")
+
+        compose.onNodeWithText("EN").performScrollTo().performClick()
+        compose.waitUntilAtLeastOneExists(hasText("Demo without a phone", substring = true), timeoutMillis = 20_000)
+    }
+
     @Test fun opensSettings() {
         compose.onNodeWithContentDescriptionCompat(compose.activity.getString(R.string.settings))
         waitFor(compose.activity.getString(R.string.save))

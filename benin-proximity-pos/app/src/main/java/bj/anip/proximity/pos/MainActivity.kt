@@ -1,5 +1,6 @@
 package bj.anip.proximity.pos
 
+import android.content.Context
 import android.content.res.Configuration
 import android.os.Bundle
 import androidx.fragment.app.FragmentActivity
@@ -17,7 +18,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -26,7 +26,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
@@ -62,6 +61,21 @@ class MainActivity : FragmentActivity() {
         AndroidPromptModel.Builder().apply { addCommonDialogs() }.build()
     }
 
+    /** Language this activity's resources were created with ("" = device language). */
+    private var appliedLanguage = ""
+
+    /**
+     * EN / FR switch: the chosen language is applied to the activity itself, so
+     * LocalContext stays this FragmentActivity (Multipaz prompts and permission
+     * helpers need it). Changing the language recreates the activity.
+     */
+    override fun attachBaseContext(newBase: Context) {
+        appliedLanguage = PosSettings.load(newBase).language
+        if (appliedLanguage.isBlank()) return super.attachBaseContext(newBase)
+        val config = Configuration(newBase.resources.configuration).apply { setLocale(Locale.forLanguageTag(appliedLanguage)) }
+        super.attachBaseContext(newBase.createConfigurationContext(config))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         initializeApplication(applicationContext)
@@ -69,25 +83,14 @@ class MainActivity : FragmentActivity() {
         // NFC scanning finds the Multipaz prompt model in the coroutine context.
         val nfcScope = CoroutineScope(lifecycleScope.coroutineContext + promptModel)
         setContent {
+            val language = controller.settings.language
+            LaunchedEffect(language) { if (language != appliedLanguage) recreate() }
             AnipTheme {
-                Localized(controller.settings.language) {
-                    PromptDialogs(promptModel = promptModel)
-                    PosApp(controller, nfcScope)
-                }
+                PromptDialogs(promptModel = promptModel)
+                PosApp(controller, nfcScope)
             }
         }
     }
-}
-
-/** EN / FR switch inside the app (falls back to the device language). */
-@Composable
-private fun Localized(language: String, content: @Composable () -> Unit) {
-    val base = LocalContext.current
-    if (language.isBlank()) return content()
-    val locale = Locale.forLanguageTag(language)
-    val config = Configuration(base.resources.configuration).apply { setLocale(locale) }
-    val localized = remember(language) { base.createConfigurationContext(config) }
-    CompositionLocalProvider(LocalContext provides localized, LocalConfiguration provides config) { content() }
 }
 
 @Composable
