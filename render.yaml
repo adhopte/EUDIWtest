@@ -1,6 +1,7 @@
 # Render Blueprint (https://render.com/docs/blueprint-spec)
-# Deploys the ANIP web POS (benin-web-pos/). BASE_URL is taken from
-# RENDER_EXTERNAL_URL automatically, so no URL needs to be configured.
+# Deploys the ANIP web POS (benin-web-pos/): an ISO/IEC 18013-5 proximity reader
+# in the browser (wallet QR + Web Bluetooth). Render provides the HTTPS that
+# camera access and Web Bluetooth require; no URL needs to be configured.
 services:
   - type: web
     name: anip-web-pos
