@@ -2,7 +2,7 @@ package bj.anip.proximity.pos
 
 import android.content.res.Configuration
 import android.os.Bundle
-import androidx.activity.ComponentActivity
+import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
@@ -55,7 +55,8 @@ import org.multipaz.prompt.AndroidPromptModel
 import org.multipaz.prompt.PromptModel
 import java.util.Locale
 
-class MainActivity : ComponentActivity() {
+// FragmentActivity (not ComponentActivity): Multipaz PromptDialogs hosts a BiometricPrompt and casts to it.
+class MainActivity : FragmentActivity() {
 
     private val promptModel: PromptModel by lazy {
         AndroidPromptModel.Builder().apply { addCommonDialogs() }.build()

@@ -76,6 +76,7 @@ dependencies {
     implementation(libs.multipaz.compose)
     implementation(libs.multipaz.doctypes)
     implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.fragment)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.datetime)
     implementation(libs.kotlinx.io.bytestring)

@@ -124,7 +124,7 @@ Requirements: JDK 17+ (21 recommended), Android SDK 36.
 
 ```bash
 cd benin-proximity-pos
-./gradlew testDebugUnitTest      # 17 tests: verifier + screenshot rendering
+./gradlew testDebugUnitTest      # 19 tests: verifier, app launch + demo flow, screenshots
 ./gradlew assembleDebug          # app/build/outputs/apk/debug/app-debug.apk
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
